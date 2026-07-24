@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Registre de vente EKAYE — Scan</title>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root {
+      --ek:       #c9882a;
+      --ek-dark:  #f0b84a;
+      --ek-mid:   #d4963a;
+      --bg:       #141210;
+      --bg-card:  #1e1b17;
+      --bg-card2: #252118;
+      --bg-head:  #2a2318;
+      --text:     #eeece8;
+      --text-2:   #d8c8a8;
+      --text-3:   #a08860;
+      --border:   rgba(201,136,42,0.25);
+      --borderdiv:rgba(201,136,42,0.14);
+      --shadow:   0 2px 12px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3);
+      --r:        12px;
+      --font:     'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .wrap { max-width: min(80%, 900px); margin: 0 auto; min-height: 100vh; }
+    @media (max-width: 600px) { .wrap { max-width: 100%; margin: 0; } }
+
+    /* ── Bannière ── */
+    .banniere { width: 100%; display: block; max-height: 180px; object-fit: cover; }
+
+    /* ── Topbar ── */
+    .topbar {
+      background: #1a1510;
+      padding: 0.85rem 1.25rem;
+      display: flex; align-items: center; gap: 12px;
+      position: sticky; top: 0; z-index: 10;
+      border-bottom: 1px solid rgba(201,136,42,0.25);
+      box-shadow: 0 2px 16px rgba(0,0,0,0.5);
+    }
+    .topbar-icon {
+      width: 36px; height: 36px; border-radius: 6px;
+      flex-shrink: 0; font-size: 20px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(201,136,42,0.15);
+      border: 1px solid rgba(201,136,42,0.3);
+    }
+    .topbar h1  { font-size: 15px; font-weight: 600; color: #e8d8b0; margin: 0; letter-spacing: 0.01em; }
+    .topbar-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+    /* ── Layout ── */
+    .body { padding: 1.25rem 1rem 2.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
+
+    /* ── Section title ── */
+    .sec-title {
+      font-size: 10px; font-weight: 700; color: var(--ek-dark);
+      text-transform: uppercase; letter-spacing: 0.12em;
+      margin-bottom: 8px;
+      display: flex; align-items: center; gap: 6px;
+      padding-left: 9px;
+      border-left: 3px solid var(--ek);
+    }
+    .badge-opt {
+      font-size: 10px; color: var(--text-3);
+      background: rgba(201,136,42,0.12);
+      border-radius: 20px; padding: 2px 8px;
+      border: 0.5px solid rgba(201,136,42,0.25);
+      margin-left: 4px; font-weight: 400; text-transform: none; letter-spacing: 0;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--bg-card);
+      border-radius: var(--r);
+      border: 0.5px solid var(--border);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .fr {
+      display: flex; align-items: center; gap: 10px;
+      padding: 11px 14px;
+      border-bottom: 0.5px solid var(--borderdiv);
+      transition: background 0.15s;
+    }
+    .fr:last-child { border-bottom: none; }
+    .fr:focus-within { background: #252118; }
+    .fi  { color: var(--ek); font-size: 15px; width: 20px; flex-shrink: 0; text-align: center; opacity: 0.8; }
+    .fb  { flex: 1; min-width: 0; }
+    .fl  { font-size: 10px; color: var(--text-2); margin-bottom: 2px; letter-spacing: 0.02em; }
+    .fv  { font-size: 14px; color: var(--text); }
+
+    .fr input, .fr select, .fr textarea {
+      width: 100%; border: none; outline: none; font-size: 14px;
+      color: var(--text); background: transparent; padding: 0; margin: 0;
+      font-family: var(--font); box-sizing: border-box;
+    }
+    .fr input::placeholder { color: var(--text-3); opacity: 0.65; }
+    .fr input[type="date"] { color: var(--text); color-scheme: dark; }
+    .fr select option { background: #1e1b17; color: var(--text); }
+
+    /* ── Champ libre point de vente ── */
+    .pdv-libre { display: none; border-top: 0.5px solid var(--borderdiv); }
+
+    /* ── Scan caméra ── */
+    .scan-card {
+      background: var(--bg-card);
+      border-radius: var(--r);
+      border: 0.5px solid var(--border);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .scan-toggle {
+      display: flex; align-items: center; justify-content: center; gap: 9px;
+      width: 100%; padding: 15px;
+      background: rgba(201,136,42,0.1);
+      border: none; color: var(--ek-dark);
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      font-family: var(--font); transition: all 0.18s;
+    }
+    .scan-toggle:hover { background: rgba(201,136,42,0.18); }
+    .scan-toggle.actif { background: #8b2020; color: #fef8e8; }
+    #lecteur { width: 100%; display: none; background: #000; }
+    #lecteur.actif { display: block; }
+    #lecteur video { display: block; width: 100% !important; height: auto !important; }
+    .scan-feedback {
+      display: none; font-size: 13px; padding: 10px 14px;
+      border-top: 0.5px solid var(--borderdiv);
+    }
+    .scan-feedback.visible { display: block; }
+    .scan-feedback.ok  { color: #7ed18a; background: rgba(80,160,90,0.1); }
+    .scan-feedback.err { color: #e07070; background: rgba(160,60,60,0.1); }
+    .scan-hint {
+      font-size: 11px; color: var(--text-3); line-height: 1.5;
+      padding: 9px 14px; border-top: 0.5px solid var(--borderdiv);
+      display: flex; gap: 6px;
+    }
+    .scan-hint::before { content: "📷"; flex-shrink: 0; }
+
+    /* ── Articles ── */
+    .article-block {
+      background: var(--bg-card);
+      border-radius: var(--r);
+      border: 0.5px solid var(--border);
+      overflow: hidden; margin-bottom: 10px;
+      box-shadow: var(--shadow);
+    }
+    .article-block.scanne { border-color: rgba(201,136,42,0.55); box-shadow: 0 0 0 1px rgba(201,136,42,0.35), var(--shadow); }
+    .article-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 9px 14px;
+      background: var(--bg-head);
+      border-bottom: 0.5px solid var(--borderdiv);
+    }
+    .article-num { font-size: 11px; font-weight: 700; color: var(--ek-dark); letter-spacing: 0.04em; }
+    .tag-scan { font-size: 9px; font-weight: 700; color: #1a1208; background: var(--ek-dark); border-radius: 20px; padding: 2px 8px; margin-left: 7px; letter-spacing: 0.03em; }
+    .del-btn {
+      font-size: 11px; color: var(--text-3);
+      background: rgba(255,255,255,0.05);
+      border: 0.5px solid rgba(255,255,255,0.12);
+      border-radius: 6px; cursor: pointer;
+      display: flex; align-items: center; gap: 3px;
+      padding: 3px 9px; transition: all 0.15s;
+    }
+    .del-btn:hover { color: #fef8e8; background: #8b2020; border-color: #8b2020; }
+
+    .add-btn {
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      width: 100%; padding: 13px;
+      background: rgba(201,136,42,0.07);
+      border: 1.5px dashed rgba(201,136,42,0.3);
+      border-radius: var(--r); color: var(--ek);
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      font-family: var(--font); transition: all 0.18s;
+    }
+    .add-btn:hover { background: rgba(201,136,42,0.14); border-color: var(--ek); }
+
+    /* ── Total bar ── */
+    .total-bar {
+      background: #1a1510;
+      border-radius: var(--r);
+      padding: 15px 18px;
+      display: flex; align-items: center; justify-content: space-between;
+      border: 1px solid rgba(201,136,42,0.3);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+    }
+    .t-lbl { font-size: 11px; color: var(--text-3); letter-spacing: 0.05em; }
+    .t-sub { font-size: 10px; color: var(--text-3); opacity: 0.7; margin-top: 3px; }
+    .t-amt { font-size: 26px; font-weight: 700; color: var(--ek-dark); letter-spacing: -0.02em; }
+
+    /* ── Chips paiement ── */
+    .chips { display: flex; gap: 8px; margin-bottom: 10px; }
+    .chip {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 5px;
+      padding: 12px 6px; border-radius: var(--r);
+      border: 0.5px solid var(--border);
+      background: var(--bg-card);
+      font-size: 11px; color: var(--text-3); cursor: pointer;
+      font-family: var(--font); transition: all 0.18s;
+    }
+    .chip .chip-icon { font-size: 22px; }
+    .chip:hover { background: var(--bg-card2); border-color: rgba(201,136,42,0.3); }
+    .chip.active {
+      background: rgba(201,136,42,0.12);
+      border: 1.5px solid var(--ek);
+      color: var(--ek-dark); font-weight: 700;
+      box-shadow: 0 0 12px rgba(201,136,42,0.15);
+    }
+    .montant-chip {
+      background: var(--bg-card);
+      border-radius: var(--r);
+      border: 0.5px solid var(--border);
+      overflow: hidden; margin-bottom: 8px; display: none;
+      box-shadow: var(--shadow);
+    }
+    .montant-chip.visible { display: block; }
+
+    /* ── Feedback écart ── */
+    .ecart-ok {
+      font-size: 12px; color: #7ed18a;
+      display: flex; align-items: center; gap: 6px;
+      padding: 9px 14px;
+      background: rgba(80,160,90,0.12);
+      border-radius: var(--r); border: 0.5px solid rgba(80,160,90,0.3); margin-top: 8px;
+    }
+    .ecart-err {
+      font-size: 12px; color: #e07070;
+      display: flex; align-items: center; gap: 6px;
+      padding: 9px 14px;
+      background: rgba(160,60,60,0.12);
+      border-radius: var(--r); border: 0.5px solid rgba(160,60,60,0.3); margin-top: 8px;
+    }
+
+    /* ── Aide ── */
+    .aide-info {
+      font-size: 11px; color: var(--text-3); margin-top: 7px;
+      line-height: 1.55; display: flex; gap: 6px;
+      padding: 7px 10px;
+      background: rgba(201,136,42,0.07);
+      border-radius: 8px;
+      border-left: 2px solid rgba(201,136,42,0.3);
+    }
+    .aide-info::before { content: "ⓘ"; color: var(--ek); flex-shrink: 0; }
+
+    /* ── Checkbox consentement ── */
+    .checkbox-card {
+      background: var(--bg-card);
+      border-radius: var(--r);
+      border: 0.5px solid var(--border);
+      padding: 13px 14px;
+      display: flex; align-items: flex-start; gap: 12px;
+      box-shadow: var(--shadow);
+    }
+    .checkbox-card input[type="checkbox"] {
+      width: 18px; height: 18px; flex-shrink: 0;
+      margin-top: 2px; accent-color: var(--ek); cursor: pointer;
+    }
+    .cb-text { font-size: 13px; color: var(--text-2); line-height: 1.5; }
+    .cb-aide { font-size: 11px; color: var(--text-3); margin-top: 4px; line-height: 1.45; }
+
+    /* ── Submit ── */
+    .submit {
+      width: 100%;
+      background: var(--ek);
+      color: #1a1208;
+      border: none; border-radius: var(--r);
+      padding: 15px; font-size: 15px; font-weight: 700;
+      cursor: pointer; font-family: var(--font);
+      letter-spacing: 0.02em;
+      box-shadow: 0 4px 18px rgba(201,136,42,0.3), 0 1px 4px rgba(0,0,0,0.3);
+      transition: all 0.2s;
+    }
+    .submit:not(:disabled):hover {
+      background: var(--ek-dark);
+      box-shadow: 0 6px 24px rgba(201,136,42,0.45), 0 2px 6px rgba(0,0,0,0.3);
+      transform: translateY(-1px);
+    }
+    .submit:not(:disabled):active { transform: translateY(0); }
+    .submit:disabled {
+      background: #3a3228; color: #6a5a40; cursor: default; box-shadow: none;
+    }
+
+    /* ── Messages ── */
+    .msg { padding: 12px 14px; border-radius: var(--r); font-size: 13px; }
+    .msg.ok  { background: rgba(80,160,90,0.12); color: #7ed18a; border: 0.5px solid rgba(80,160,90,0.3); }
+    .msg.erreur { background: rgba(160,60,60,0.12); color: #e07070; border: 0.5px solid rgba(160,60,60,0.3); }
+
+    /* ── Config API + chargement ── */
+    .config {
+      margin-top: 4px; padding: 12px 14px;
+      border: 1px dashed var(--borderdiv); border-radius: var(--r);
+      font-size: 11px; color: var(--text-3);
+    }
+    .config summary { cursor: pointer; color: var(--text-2); }
+    .config input { width: 100%; padding: 8px; margin-top: 8px; box-sizing: border-box;
+      background: var(--bg-card2); border: 0.5px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--font); }
+    .config button { margin-top: 8px; padding: 7px 14px; background: var(--ek); color: #1a1208; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .chargement { text-align: center; color: var(--text-3); font-size: 13px; padding: 30px 14px; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <img class="banniere" src="https://ekaye.fr/wp-content/uploads/2026/06/banniere_ekaye.jpg" alt="EKAYE — Luminaire en vitrail sur mesure à Libourne">
+
+  <div class="topbar">
+    <div class="topbar-icon">🏮</div>
+    <div>
+      <h1>Registre de vente EKAYE</h1>
+      <div class="topbar-sub">Scan QR + saisie manuelle — Libourne</div>
+    </div>
+  </div>
+
+  <div class="body">
+
+    <div id="chargement" class="chargement">Chargement du stock…</div>
+
+    <div id="formulaire" style="display:none; flex-direction:column; gap:1.25rem;">
+
+    <!-- Point de vente + Date -->
+    <div>
+      <div class="sec-title">📍 Point de vente</div>
+      <div class="card">
+        <div class="fr">
+          <span class="fi">🏪</span>
+          <div class="fb">
+            <div class="fl">Point de vente *</div>
+            <select id="pointDeVente" class="fv" onchange="basculerPointLibre(); actualiserStockTousLesArticles();"></select>
+          </div>
+        </div>
+        <div class="fr pdv-libre" id="rowPointLibre">
+          <span class="fi">✏️</span>
+          <div class="fb">
+            <div class="fl" id="labelPointLibre">Nom de l'expo</div>
+            <input type="text" id="pointDeVenteLibre" class="fv" placeholder="ex : Les Audacieuses Vichy 2026" oninput="actualiserStockTousLesArticles()">
+          </div>
+        </div>
+        <div class="fr">
+          <span class="fi">📅</span>
+          <div class="fb">
+            <div class="fl">Date de la vente *</div>
+            <input type="date" id="date" class="fv">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scan caméra -->
+    <div>
+      <div class="sec-title">📷 Scanner un article <span class="badge-opt">facultatif</span></div>
+      <div class="scan-card">
+        <button type="button" class="scan-toggle" id="scanToggle" onclick="basculerScan()">📷 Scanner un article</button>
+        <div id="lecteur"></div>
+        <div class="scan-feedback" id="scanFeedback"></div>
+        <div class="scan-hint">Pointez la caméra sur le QR d'une pièce : elle s'ajoute au panier. Scannez plusieurs pièces à la suite. Le scan est facultatif — vous pouvez tout saisir aux menus ci-dessous.</div>
+      </div>
+    </div>
+
+    <!-- Articles -->
+    <div>
+      <div class="sec-title">🏷 Articles vendus</div>
+      <div id="articles"></div>
+      <button type="button" class="add-btn" onclick="ajouterArticle()">+ Ajouter un article</button>
+    </div>
+
+    <!-- Total bar -->
+    <div class="total-bar">
+      <div>
+        <div class="t-lbl">Total articles</div>
+        <div class="t-sub" id="detail-commissions">—</div>
+      </div>
+      <div class="t-amt"><span id="total">0,00</span> €</div>
+    </div>
+
+    <!-- Paiement -->
+    <div>
+      <div class="sec-title">💳 Paiement</div>
+      <div class="chips" id="chips-paiement"></div>
+      <div id="montants-paiement"></div>
+      <div class="aide-info">Paiement mixte : sélectionnez plusieurs modes et renseignez un montant pour chacun.</div>
+      <div id="ecart-paiement"></div>
+    </div>
+
+    <!-- Infos client -->
+    <div>
+      <div class="sec-title">👤 Informations client <span class="badge-opt">facultatif</span></div>
+      <div class="card">
+        <div class="fr">
+          <span class="fi">👤</span>
+          <div class="fb">
+            <div class="fl">Nom</div>
+            <input type="text" id="clientNom" class="fv" placeholder="Dupont">
+          </div>
+        </div>
+        <div class="fr">
+          <span class="fi">👤</span>
+          <div class="fb">
+            <div class="fl">Prénom</div>
+            <input type="text" id="clientPrenom" class="fv" placeholder="Marie">
+          </div>
+        </div>
+        <div class="fr">
+          <span class="fi">✉️</span>
+          <div class="fb">
+            <div class="fl">Email</div>
+            <input type="email" id="clientEmail" class="fv" placeholder="marie@exemple.fr">
+          </div>
+        </div>
+        <div class="fr">
+          <span class="fi">📞</span>
+          <div class="fb">
+            <div class="fl">Téléphone</div>
+            <input type="tel" id="clientTelephone" class="fv" placeholder="06 …">
+          </div>
+        </div>
+        <div class="fr">
+          <span class="fi">🏠</span>
+          <div class="fb">
+            <div class="fl">Adresse</div>
+            <input type="text" id="clientAdresse" class="fv" placeholder="12 rue des Lilas">
+          </div>
+        </div>
+        <div class="fr">
+          <span class="fi">🗺</span>
+          <div class="fb">
+            <div class="fl">Code postal</div>
+            <input type="text" id="clientCodePostal" class="fv" placeholder="33500">
+          </div>
+        </div>
+        <div class="fr">
+          <span class="fi">🏙</span>
+          <div class="fb">
+            <div class="fl">Ville</div>
+            <input type="text" id="clientVille" class="fv" placeholder="Libourne">
+          </div>
+        </div>
+        <div class="fr">
+          <span class="fi">🌍</span>
+          <div class="fb">
+            <div class="fl">Pays</div>
+            <input type="text" id="clientPays" class="fv" placeholder="France">
+          </div>
+        </div>
+        <div class="fr" style="align-items:flex-start">
+          <span class="fi">📝</span>
+          <div class="fb" style="width:100%">
+            <div class="fl">Note</div>
+            <textarea id="clientNote" class="fv" rows="3" placeholder="Préférences, occasion, couleurs souhaitées…" style="resize:vertical;font-family:inherit;font-size:inherit;line-height:1.5"></textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Consentement -->
+    <div>
+      <div class="sec-title">🔒 Consentement</div>
+      <div class="checkbox-card">
+        <input type="checkbox" id="clientConsentement">
+        <div>
+          <div class="cb-text">Le client souhaite recevoir les actualités EKAYE par email.</div>
+          <div class="cb-aide">Ne cochez qu'avec l'accord oral explicite du client. Cette coche déclenche un email de confirmation que le client doit valider lui-même.</div>
+        </div>
+      </div>
+    </div>
+
+    <button type="button" class="submit" id="boutonValider" onclick="validerVente()">Enregistrer la vente</button>
+
+    <div id="message" class="msg" style="display:none;"></div>
+
+    <details class="config">
+      <summary>⚙️ Réglage technique (URL de l'Apps Script)</summary>
+      <input type="text" id="urlApi" placeholder="https://script.google.com/macros/s/AKfycb.../exec">
+      <button onclick="sauverUrl()">Enregistrer et recharger</button>
+    </details>
+
+    </div><!-- /formulaire -->
+
+  </div>
+</div>
+
+<script>
+  /* ── Configuration API ──────────────────────────────────────────────── */
+  // URL /exec du déploiement Apps Script (pointe toujours vers la dernière version
+  // publiée). Modifiable sur l'appareil via le réglage technique en bas de page.
+  var URL_API_DEFAUT = 'https://script.google.com/macros/s/AKfycbwl4wyUyxOyrWVtXVvjoS-7LMqAULNaNBCAUdBZxRYTlFF3OVkjE0mWifOiG6oqK_h5Xg/exec';
+
+  function urlApi() {
+    return localStorage.getItem('ekaye_vente_url_api') || URL_API_DEFAUT;
+  }
+  function sauverUrl() {
+    var valeur = document.getElementById('urlApi').value.trim();
+    if (valeur) {
+      localStorage.setItem('ekaye_vente_url_api', valeur);
+      location.reload();
+    }
+  }
+
+  var listes = { pointsDeVente: [], modesPaiement: [], familles: [], stock: [] };
+  var compteurArticle = 0;
+  var modesActifs = {};
+  var iconesModes = { 'CB': '💳', 'Espèces': '💵', 'Chèque': '📝' };
+
+  /* ── Point de vente ── */
+  // Le stock déposé "Expo" (dépôt générique) doit rester visible même quand la vente
+  // précise le nom de l'expo ("Expo — Chalais 2026") : on compare sur la base avant " — ".
+  function correspondPointDeVente(depot, pdv) {
+    if (depot === pdv) return true;
+    return depot === 'Expo' && pdv.indexOf('Expo — ') === 0;
+  }
+
+  function totalPiecesParDepot(nomPdv) {
+    return listes.stock
+      .filter(function(a) { return correspondPointDeVente(a.depot, nomPdv); })
+      .reduce(function(t, a) { return t + (Number(a.quantite) || 0); }, 0);
+  }
+
+  function remplirSelectPointDeVente(select) {
+    select.innerHTML = '<option value="">Choisir…</option>' +
+      listes.pointsDeVente.map(function(v) {
+        var total = totalPiecesParDepot(v);
+        return '<option value="' + v + '">' + v + ' (' + total + ')</option>';
+      }).join('') +
+      '<option value="__expo__">🎪 Expo (nom à préciser)…</option>';
+    for (var i = 0; i < select.options.length; i++) {
+      if (select.options[i].value.trim() === 'Atelier') { select.selectedIndex = i; break; }
+    }
+  }
+
+  function basculerPointLibre() {
+    var select = document.getElementById('pointDeVente');
+    var row = document.getElementById('rowPointLibre');
+    var label = document.getElementById('labelPointLibre');
+    var input = document.getElementById('pointDeVenteLibre');
+    if (select.value === '__expo__') {
+      row.style.display = 'flex';
+      label.textContent = "Nom de l'expo";
+      input.placeholder = 'ex : Les Audacieuses Vichy 2026';
+    } else if (select.value === '__libre__') {
+      row.style.display = 'flex';
+      label.textContent = 'Nom du point de vente';
+      input.placeholder = 'ex : Marché de Noël Libourne 2026';
+    } else {
+      row.style.display = 'none';
+    }
+  }
+
+  // Valeur qui sera réellement enregistrée avec la vente (exige le nom précis pour Expo/libre).
+  function pointDeVenteActuel() {
+    var select = document.getElementById('pointDeVente');
+    var texte = document.getElementById('pointDeVenteLibre').value.trim();
+    if (select.value === '__expo__') {
+      return texte ? 'Expo — ' + texte : '';
+    }
+    if (select.value === '__libre__') {
+      return texte;
+    }
+    return select.value;
+  }
+
+  // Valeur utilisée uniquement pour filtrer le stock à l'écran : "Expo" doit filtrer le
+  // stock déposé "Expo" dès la sélection de l'option, sans attendre que le nom précis soit
+  // tapé (le nom reste obligatoire pour valider la vente, voir pointDeVenteActuel).
+  function pointDeVentePourFiltrage() {
+    var select = document.getElementById('pointDeVente');
+    if (select.value === '__expo__') return 'Expo';
+    if (select.value === '__libre__') return '';
+    return select.value;
+  }
+
+  /* ── Familles / Stock ── */
+  function totalPiecesParFamille(nomFamille) {
+    var pdv = pointDeVentePourFiltrage();
+    return listes.stock
+      .filter(function(a) { return a.famille === nomFamille && (!pdv || correspondPointDeVente(a.depot, pdv)); })
+      .reduce(function(t, a) { return t + (Number(a.quantite) || 0); }, 0);
+  }
+
+  function remplirSelectFamilles(select) {
+    var val = select.value;
+    select.innerHTML = '<option value="">Toutes les familles</option>' +
+      listes.familles.map(function(f) {
+        var total = totalPiecesParFamille(f);
+        return '<option value="' + f + '">' + f + ' (' + total + ')</option>';
+      }).join('');
+    select.value = val;
+  }
+
+  function remplirSelectStock(select, familleFiltre) {
+    var pdv = pointDeVentePourFiltrage();
+    var liste = listes.stock;
+    if (familleFiltre) liste = liste.filter(function(a) { return a.famille === familleFiltre; });
+    if (pdv) liste = liste.filter(function(a) { return correspondPointDeVente(a.depot, pdv); });
+
+    select.innerHTML = '<option value="">Choisir un article du stock…</option>' +
+      liste.map(function(a) {
+        var designation = String(a.designation || '');
+        var couleur = String(a.couleur || '');
+        var famille = String(a.famille || '');
+        var prix = Number(a.prix) || 0;
+        var libelle = designation + (couleur ? ' — ' + couleur : '');
+        var indicSerie = a.type === 'Série' ? ' (' + a.quantite + ' dispo)' : '';
+        return '<option value="' + a.id + '" data-famille="' + famille.replace(/"/g, '&quot;') +
+          '" data-designation="' + designation.replace(/"/g, '&quot;') +
+          '" data-prix="' + prix + '">' +
+          libelle + ' — ' + prix.toFixed(2).replace('.', ',') + ' €' + indicSerie + '</option>';
+      }).join('') +
+      '<option value="__hors_stock__">Autre (hors stock)…</option>';
+  }
+
+  function actualiserStockTousLesArticles() {
+    document.querySelectorAll('#articles .article-block').forEach(function(div) {
+      var id = div.id.split('-')[1];
+      remplirSelectFamilles(document.getElementById('famille-' + id));
+      filtrerArticlesParFamille(id);
+    });
+  }
+
+  function filtrerArticlesParFamille(id) {
+    var famille = document.getElementById('famille-' + id).value;
+    remplirSelectStock(document.getElementById('stock-' + id), famille);
+    choisirArticleStock(id);
+  }
+
+  function choisirArticleStock(id) {
+    var select = document.getElementById('stock-' + id);
+    var champDesig = document.getElementById('designation-' + id);
+    var champMontant = document.getElementById('montant-' + id);
+    if (select.value === '__hors_stock__' || select.value === '') {
+      champDesig.parentElement.parentElement.style.display = 'flex';
+      champDesig.value = '';
+      if (select.value === '') champMontant.value = '';
+    } else {
+      var opt = select.options[select.selectedIndex];
+      champDesig.parentElement.parentElement.style.display = 'none';
+      champDesig.value = opt.getAttribute('data-designation');
+      champMontant.value = opt.getAttribute('data-prix');
+    }
+    recalculerTotal();
+  }
+
+  /* ── Articles ── */
+  function ajouterArticle() {
+    compteurArticle++;
+    var id = compteurArticle;
+    var div = document.createElement('div');
+    div.className = 'article-block';
+    div.id = 'article-' + id;
+    div.innerHTML =
+      '<div class="article-head">' +
+        '<span class="article-num">🏷 Article ' + id + '<span class="tag-scan" id="tagscan-' + id + '" style="display:none">SCANNÉ</span></span>' +
+        '<button type="button" class="del-btn" onclick="supprimerArticle(' + id + ')">✕ Supprimer</button>' +
+      '</div>' +
+      '<div class="fr">' +
+        '<span class="fi">🗂</span>' +
+        '<div class="fb"><div class="fl">Famille</div>' +
+        '<select id="famille-' + id + '" class="fv" onchange="filtrerArticlesParFamille(' + id + ')"></select></div>' +
+      '</div>' +
+      '<div class="fr">' +
+        '<span class="fi">🏮</span>' +
+        '<div class="fb"><div class="fl">Article *</div>' +
+        '<select id="stock-' + id + '" class="fv" onchange="choisirArticleStock(' + id + ')"></select></div>' +
+      '</div>' +
+      '<div class="fr" id="rowDesig-' + id + '">' +
+        '<span class="fi">✏️</span>' +
+        '<div class="fb"><div class="fl">Désignation *</div>' +
+        '<input type="text" id="designation-' + id + '" class="fv" placeholder="Description de l\'article"></div>' +
+      '</div>' +
+      '<div class="fr">' +
+        '<span class="fi">€</span>' +
+        '<div class="fb"><div class="fl">Montant brut (€) *</div>' +
+        '<input type="number" step="0.01" min="0" id="montant-' + id + '" class="fv" placeholder="0,00" oninput="recalculerTotal()"></div>' +
+      '</div>';
+    document.getElementById('articles').appendChild(div);
+    remplirSelectFamilles(document.getElementById('famille-' + id));
+    remplirSelectStock(document.getElementById('stock-' + id), '');
+    recalculerTotal();
+    return id;
+  }
+
+  function supprimerArticle(id) {
+    var el = document.getElementById('article-' + id);
+    if (el) el.remove();
+    recalculerTotal();
+  }
+
+  function listeArticlesDOM() {
+    return Array.prototype.slice.call(document.querySelectorAll('#articles .article-block'));
+  }
+
+  // Un article "vide" = famille non choisie, aucun article de stock sélectionné,
+  // pas de désignation ni de montant saisis. Sert à réutiliser la première ligne
+  // vierge quand on scanne, plutôt que d'empiler une ligne vide + la ligne scannée.
+  function articleEstVide(id) {
+    var stock = document.getElementById('stock-' + id);
+    var desig = document.getElementById('designation-' + id);
+    var montant = document.getElementById('montant-' + id);
+    if (!stock) return false;
+    var stockVide = !stock.value || stock.value === '__hors_stock__';
+    return stockVide && !(desig && desig.value) && !(montant && montant.value);
+  }
+
+  /* ── Ajout d'un article par scan QR ─────────────────────────────────── */
+  // La valeur scannée est l'ID de la pièce (colonne "ID" de sa feuille de stock).
+  // - Pièce unique : l'entrée de stock a exactement cet id.
+  // - Pièce en série : les entrées ont un id composite "id::PointDeVente" ; on retient
+  //   celle du point de vente sélectionné, sinon on signale qu'il n'y en a pas ici.
+  function trouverDansStock(scannedId) {
+    var pdv = pointDeVentePourFiltrage();
+
+    var exact = listes.stock.filter(function(a) { return String(a.id) === scannedId; })[0];
+    if (exact) return { entry: exact };
+
+    var prefixe = scannedId + '::';
+    var serieIci = listes.stock.filter(function(a) {
+      return String(a.id).indexOf(prefixe) === 0 && correspondPointDeVente(a.depot, pdv);
+    })[0];
+    if (serieIci) return { entry: serieIci };
+
+    var serieAilleurs = listes.stock.filter(function(a) { return String(a.id).indexOf(prefixe) === 0; });
+    if (serieAilleurs.length) {
+      var depots = serieAilleurs.map(function(a) { return a.depot; }).join(', ');
+      return { serieAutrePdv: true, designation: serieAilleurs[0].designation, depots: depots };
+    }
+    return null;
+  }
+
+  function ajouterArticleDepuisEntree(entry) {
+    // Réutilise une éventuelle première ligne vierge, sinon en crée une nouvelle
+    var articles = listeArticlesDOM();
+    var id = null;
+    for (var i = 0; i < articles.length; i++) {
+      var aid = articles[i].id.split('-')[1];
+      if (articleEstVide(aid)) { id = aid; break; }
+    }
+    if (id === null) id = ajouterArticle();
+
+    var selF = document.getElementById('famille-' + id);
+    remplirSelectFamilles(selF);
+    selF.value = entry.famille;
+    filtrerArticlesParFamille(id);
+
+    var selS = document.getElementById('stock-' + id);
+    selS.value = entry.id;
+    choisirArticleStock(id);
+
+    document.getElementById('article-' + id).classList.add('scanne');
+    document.getElementById('tagscan-' + id).style.display = 'inline-block';
+    return id;
+  }
+
+  /* ── Scanner caméra ─────────────────────────────────────────────────── */
+  var lecteur = null;
+  var scanActif = false;
+  var dernierScan = { code: null, temps: 0 };
+
+  function afficherScanFeedback(texte, type) {
+    var el = document.getElementById('scanFeedback');
+    el.className = 'scan-feedback visible ' + type;
+    el.textContent = texte;
+  }
+
+  function basculerScan() {
+    if (scanActif) { arreterScan(); } else { demarrerScan(); }
+  }
+
+  function demarrerScan() {
+    var lecteurDiv = document.getElementById('lecteur');
+    lecteurDiv.classList.add('actif');
+    lecteur = new Html5Qrcode('lecteur', {
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.CODE_39
+      ]
+    });
+    var config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+    Html5Qrcode.getCameras().then(function(cameras) {
+      if (!cameras || cameras.length === 0) {
+        afficherScanFeedback('Aucune caméra détectée sur cet appareil.', 'err');
+        lecteurDiv.classList.remove('actif');
+        return;
+      }
+      var arriere = cameras.filter(function(c) { return /back|arri/i.test(c.label); });
+      var idCamera = arriere.length > 0 ? arriere[0].id : cameras[cameras.length - 1].id;
+      lecteur.start(idCamera, config, onScanReussi).then(function() {
+        scanActif = true;
+        var btn = document.getElementById('scanToggle');
+        btn.classList.add('actif');
+        btn.textContent = '✕ Fermer la caméra';
+      }).catch(function(err) {
+        afficherScanFeedback('Impossible de démarrer la caméra : ' + err, 'err');
+        lecteurDiv.classList.remove('actif');
+      });
+    }).catch(function(err) {
+      afficherScanFeedback('Accès caméra refusé ou indisponible : ' + err, 'err');
+      lecteurDiv.classList.remove('actif');
+    });
+  }
+
+  function arreterScan() {
+    if (lecteur && scanActif) {
+      lecteur.stop().then(function() {
+        lecteur.clear();
+        finaliserArretScan();
+      }).catch(function() { finaliserArretScan(); });
+    } else {
+      finaliserArretScan();
+    }
+  }
+
+  function finaliserArretScan() {
+    scanActif = false;
+    document.getElementById('lecteur').classList.remove('actif');
+    var btn = document.getElementById('scanToggle');
+    btn.classList.remove('actif');
+    btn.textContent = '📷 Scanner un article';
+  }
+
+  function onScanReussi(texteDecode) {
+    var code = String(texteDecode).trim();
+    var maintenant = Date.now();
+    // Anti-doublon : ignore le même code rescanné dans les 2,5 s (la caméra lit en continu)
+    if (code === dernierScan.code && (maintenant - dernierScan.temps) < 2500) return;
+    dernierScan = { code: code, temps: maintenant };
+
+    var resultat = trouverDansStock(code);
+    if (!resultat) {
+      afficherScanFeedback('✕ Aucune pièce en stock ne correspond au code « ' + code + ' ».', 'err');
+      bip(false);
+      return;
+    }
+    if (resultat.serieAutrePdv) {
+      afficherScanFeedback('« ' + resultat.designation +' » n\'est pas en stock au point de vente choisi (dispo : ' + resultat.depots + '). Changez le point de vente en haut.', 'err');
+      bip(false);
+      return;
+    }
+    var entry = resultat.entry;
+    ajouterArticleDepuisEntree(entry);
+    var prix = (Number(entry.prix) || 0).toFixed(2).replace('.', ',');
+    afficherScanFeedback('✓ Ajouté : ' + entry.designation + (entry.couleur ? ' — ' + entry.couleur : '') + ' (' + prix + ' €)', 'ok');
+    bip(true);
+  }
+
+  // Petit retour sonore (agréable pour scanner sans regarder l'écran)
+  function bip(succes) {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var o = ctx.createOscillator();
+      var g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = succes ? 880 : 220;
+      g.gain.value = 0.08;
+      o.start();
+      setTimeout(function() { o.stop(); ctx.close(); }, succes ? 110 : 200);
+    } catch (e) { /* son indisponible : sans conséquence */ }
+  }
+
+  /* ── Chips paiement ── */
+  function slugMode(m) { return m.replace(/[^a-zA-Z0-9]/g, '_'); }
+
+  function rendreChips() {
+    var container = document.getElementById('chips-paiement');
+    container.innerHTML = '';
+    listes.modesPaiement.forEach(function(mode) {
+      var slug = slugMode(mode);
+      var icone = iconesModes[mode] || '💰';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'chip';
+      btn.id = 'chip-' + slug;
+      btn.innerHTML = '<span class="chip-icon">' + icone + '</span>' + mode;
+      btn.onclick = function() { toggleChip(mode); };
+      container.appendChild(btn);
+
+      var ligne = document.createElement('div');
+      ligne.className = 'montant-chip';
+      ligne.id = 'ligne-' + slug;
+      ligne.innerHTML =
+        '<div class="fr">' +
+        '<span class="fi">' + icone + '</span>' +
+        '<div class="fb"><div class="fl">Montant ' + mode + ' (€)</div>' +
+        '<input type="number" step="0.01" min="0" id="montantpaiement-' + slug + '" class="fv" placeholder="0,00" oninput="recalculerTotal()">' +
+        '</div></div>';
+      document.getElementById('montants-paiement').appendChild(ligne);
+    });
+  }
+
+  function toggleChip(mode) {
+    var slug = slugMode(mode);
+    var chip = document.getElementById('chip-' + slug);
+    var ligne = document.getElementById('ligne-' + slug);
+    if (chip.classList.contains('active')) {
+      chip.classList.remove('active');
+      ligne.classList.remove('visible');
+      document.getElementById('montantpaiement-' + slug).value = '';
+      delete modesActifs[slug];
+    } else {
+      chip.classList.add('active');
+      ligne.classList.add('visible');
+      modesActifs[slug] = mode;
+    }
+    recalculerTotal();
+  }
+
+  /* ── Calculs ── */
+  function recalculerTotal() {
+    var total = 0;
+    listeArticlesDOM().forEach(function(div) {
+      var id = div.id.split('-')[1];
+      total += parseFloat(document.getElementById('montant-' + id).value) || 0;
+    });
+    document.getElementById('total').textContent = total.toFixed(2).replace('.', ',');
+
+    // Auto-copie CB si seul mode actif
+    var modesActifsListe = Object.keys(modesActifs);
+    if (modesActifsListe.length === 1 && modesActifs[slugMode('CB')]) {
+      var cbInput = document.getElementById('montantpaiement-' + slugMode('CB'));
+      if (cbInput) cbInput.value = total > 0 ? total.toFixed(2) : '';
+    }
+
+    // Commission SumUp (CB uniquement, 1,75 %)
+    var commSumUp = 0;
+    listes.modesPaiement.forEach(function(mode) {
+      if (mode === 'CB') {
+        var slug = slugMode(mode);
+        var chip = document.getElementById('chip-' + slug);
+        if (chip && chip.classList.contains('active')) {
+          var montantCB = parseFloat(document.getElementById('montantpaiement-' + slug).value) || 0;
+          commSumUp = montantCB * 0.0175;
+        }
+      }
+    });
+    var detail = commSumUp > 0
+      ? 'Comm. SumUp : ' + commSumUp.toFixed(2).replace('.', ',') + ' €'
+      : '';
+    document.getElementById('detail-commissions').textContent = total > 0 && detail ? detail : '—';
+
+    // Écart paiement
+    var totalPaye = 0;
+    listes.modesPaiement.forEach(function(mode) {
+      var slug = slugMode(mode);
+      var chip = document.getElementById('chip-' + slug);
+      if (chip && chip.classList.contains('active')) {
+        totalPaye += parseFloat(document.getElementById('montantpaiement-' + slug).value) || 0;
+      }
+    });
+
+    var ecartEl = document.getElementById('ecart-paiement');
+    if (Object.keys(modesActifs).length === 0) {
+      ecartEl.innerHTML = '';
+    } else {
+      var ecart = total - totalPaye;
+      if (Math.abs(ecart) <= 0.01) {
+        ecartEl.innerHTML = '<div class="ecart-ok">✓ Paiement complet — ' + totalPaye.toFixed(2).replace('.', ',') + ' € réglés.</div>';
+      } else if (ecart > 0) {
+        ecartEl.innerHTML = '<div class="ecart-err">Il manque ' + ecart.toFixed(2).replace('.', ',') + ' € de paiement.</div>';
+      } else {
+        ecartEl.innerHTML = '<div class="ecart-err">Le paiement dépasse le total de ' + Math.abs(ecart).toFixed(2).replace('.', ',') + ' €.</div>';
+      }
+    }
+  }
+
+  /* ── Validation ── */
+  function afficherMessage(texte, type) {
+    var el = document.getElementById('message');
+    el.className = 'msg ' + type;
+    el.textContent = texte;
+    el.style.display = 'block';
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function validerVente() {
+    var pointDeVente = pointDeVenteActuel();
+    var date = document.getElementById('date').value;
+
+    if (!pointDeVente || !date) {
+      afficherMessage('Merci de renseigner le point de vente et la date.', 'erreur');
+      return;
+    }
+
+    var articlesBruts = listeArticlesDOM().map(function(div) {
+      var id = div.id.split('-')[1];
+      var selectStock = document.getElementById('stock-' + id);
+      var estStock = selectStock.value && selectStock.value !== '__hors_stock__';
+      var opt = estStock ? selectStock.options[selectStock.selectedIndex] : null;
+      return {
+        designation: document.getElementById('designation-' + id).value,
+        montant: document.getElementById('montant-' + id).value,
+        stockId: estStock ? selectStock.value : '',
+        famille: opt ? opt.getAttribute('data-famille') : ''
+      };
+    });
+
+    var paiementsBruts = [];
+    listes.modesPaiement.forEach(function(mode) {
+      var slug = slugMode(mode);
+      var chip = document.getElementById('chip-' + slug);
+      if (chip && chip.classList.contains('active')) {
+        paiementsBruts.push({ mode: mode, montant: document.getElementById('montantpaiement-' + slug).value });
+      }
+    });
+
+    var articles = articlesBruts.filter(function(a) { return a.designation || a.montant; });
+    var paiements = paiementsBruts.filter(function(p) { return p.mode || p.montant; });
+
+    var clientRempli = document.getElementById('clientNom').value ||
+      document.getElementById('clientPrenom').value ||
+      document.getElementById('clientEmail').value ||
+      document.getElementById('clientTelephone').value ||
+      document.getElementById('clientAdresse').value ||
+      document.getElementById('clientVille').value;
+
+    if (articles.length === 0 && !clientRempli) {
+      afficherMessage('Ajoutez au moins un article, ou renseignez les infos client.', 'erreur');
+      return;
+    }
+
+    if (articles.length > 0) {
+      for (var i = 0; i < articles.length; i++) {
+        if (!articles[i].designation || !articles[i].montant) {
+          afficherMessage('Chaque article doit avoir une désignation et un montant.', 'erreur');
+          return;
+        }
+      }
+      if (paiements.length === 0) {
+        afficherMessage('Sélectionnez au moins un mode de paiement.', 'erreur');
+        return;
+      }
+      for (var j = 0; j < paiements.length; j++) {
+        if (!paiements[j].montant) {
+          afficherMessage('Renseignez le montant pour chaque mode de paiement sélectionné.', 'erreur');
+          return;
+        }
+      }
+      var totalArticles = articles.reduce(function(s, a) { return s + (parseFloat(a.montant) || 0); }, 0);
+      var totalPaiements = paiements.reduce(function(s, p) { return s + (parseFloat(p.montant) || 0); }, 0);
+      if (Math.abs(totalArticles - totalPaiements) > 0.01) {
+        afficherMessage(
+          'Le total des paiements (' + totalPaiements.toFixed(2).replace('.', ',') +
+          ' €) ne correspond pas au total des articles (' + totalArticles.toFixed(2).replace('.', ',') + ' €).',
+          'erreur'
+        );
+        return;
+      }
+    }
+
+    var client = {
+      nom: document.getElementById('clientNom').value,
+      prenom: document.getElementById('clientPrenom').value,
+      email: document.getElementById('clientEmail').value,
+      telephone: document.getElementById('clientTelephone').value,
+      adresse: document.getElementById('clientAdresse').value,
+      codePostal: document.getElementById('clientCodePostal').value,
+      ville: document.getElementById('clientVille').value,
+      pays: document.getElementById('clientPays').value,
+      note: document.getElementById('clientNote').value,
+      consentement: document.getElementById('clientConsentement').checked
+    };
+
+    var bouton = document.getElementById('boutonValider');
+    bouton.disabled = true;
+    bouton.textContent = 'Enregistrement…';
+
+    fetch(urlApi(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // évite le preflight CORS
+      body: JSON.stringify({
+        action: 'enregistrerVentePanier',
+        data: { pointDeVente: pointDeVente, date: date, paiements: paiements, articles: articles, client: client }
+      })
+    })
+    .then(function(reponse) { return reponse.json(); })
+    .then(function(resultat) {
+      if (resultat && resultat.erreur) {
+        afficherMessage('Erreur : ' + resultat.erreur, 'erreur');
+        bouton.disabled = false;
+        bouton.textContent = 'Enregistrer la vente';
+        return;
+      }
+      if (resultat.nbArticles > 0) {
+        afficherMessage('Vente enregistrée : ' + resultat.nbArticles + ' article(s), total ' + resultat.total.toFixed(2).replace('.', ',') + ' €.', 'ok');
+      } else {
+        afficherMessage('Informations client enregistrées (aucune vente).', 'ok');
+      }
+      rechargerStockPuisReinitialiser();
+    })
+    .catch(function(erreur) {
+      afficherMessage('Erreur réseau : ' + erreur, 'erreur');
+      bouton.disabled = false;
+      bouton.textContent = 'Enregistrer la vente';
+    });
+  }
+
+  // Après une vente, on recharge le stock (les pièces vendues ont disparu / décrémenté)
+  // avant de repartir sur un formulaire vierge, pour que les prochains scans soient à jour.
+  function rechargerStockPuisReinitialiser() {
+    fetch(urlApi() + '?action=getListes')
+      .then(function(r) { return r.json(); })
+      .then(function(data) { listes = data; reinitialiserFormulaire(); })
+      .catch(function() { reinitialiserFormulaire(); });
+  }
+
+  function reinitialiserFormulaire() {
+    document.getElementById('articles').innerHTML = '';
+    compteurArticle = 0;
+    listes.modesPaiement.forEach(function(mode) {
+      var slug = slugMode(mode);
+      var chip = document.getElementById('chip-' + slug);
+      if (chip) chip.classList.remove('active');
+      var ligne = document.getElementById('ligne-' + slug);
+      if (ligne) ligne.classList.remove('visible');
+      var input = document.getElementById('montantpaiement-' + slug);
+      if (input) input.value = '';
+    });
+    modesActifs = {};
+    document.getElementById('clientNom').value = '';
+    document.getElementById('clientPrenom').value = '';
+    document.getElementById('clientEmail').value = '';
+    document.getElementById('clientTelephone').value = '';
+    document.getElementById('clientAdresse').value = '';
+    document.getElementById('clientCodePostal').value = '';
+    document.getElementById('clientVille').value = '';
+    document.getElementById('clientPays').value = '';
+    document.getElementById('clientNote').value = '';
+    document.getElementById('clientConsentement').checked = false;
+    document.getElementById('ecart-paiement').innerHTML = '';
+    // Rafraîchit les totaux (nombre de pièces) du sélecteur point de vente
+    var pdvSelect = document.getElementById('pointDeVente');
+    var pdvVal = pdvSelect.value;
+    remplirSelectPointDeVente(pdvSelect);
+    pdvSelect.value = pdvVal;
+    ajouterArticle();
+    recalculerTotal();
+    var bouton = document.getElementById('boutonValider');
+    bouton.disabled = false;
+    bouton.textContent = 'Enregistrer la vente';
+  }
+
+  // Auto-sélection du contenu au focus sur les champs numériques
+  document.addEventListener('focus', function(e) {
+    if (e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'date') {
+      e.target.select();
+    }
+  }, true);
+
+  /* ── Chargement initial ─────────────────────────────────────────────── */
+  document.getElementById('urlApi').value = localStorage.getItem('ekaye_vente_url_api') || '';
+
+  function chargerListes() {
+    fetch(urlApi() + '?action=getListes')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        listes = data;
+        document.getElementById('chargement').style.display = 'none';
+        document.getElementById('formulaire').style.display = 'flex';
+        remplirSelectPointDeVente(document.getElementById('pointDeVente'));
+        document.getElementById('date').value = new Date().toISOString().slice(0, 10);
+        rendreChips();
+        ajouterArticle();
+      })
+      .catch(function(erreur) {
+        document.getElementById('chargement').innerHTML =
+          'Impossible de charger le stock.<br>Vérifiez la connexion, ou l\'URL de l\'Apps Script dans le réglage technique.<br><br>' +
+          '<small style="color:#a08860">' + erreur + '</small>';
+      });
+  }
+
+  chargerListes();
+</script>
+</body>
+</html>
