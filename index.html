@@ -517,9 +517,15 @@
     return depot === 'Expo' && pdv.indexOf('Expo — ') === 0;
   }
 
+  // Un service (atelier) n'est pas déposé quelque part : il se vend partout. Il ne
+  // passe donc jamais par le filtre de dépôt, et n'est pas compté comme une pièce.
+  function estService(article) {
+    return article.type === 'Service';
+  }
+
   function totalPiecesParDepot(nomPdv) {
     return listes.stock
-      .filter(function(a) { return correspondPointDeVente(a.depot, nomPdv); })
+      .filter(function(a) { return !estService(a) && correspondPointDeVente(a.depot, nomPdv); })
       .reduce(function(t, a) { return t + (Number(a.quantite) || 0); }, 0);
   }
 
@@ -580,7 +586,7 @@
   function totalPiecesParFamille(nomFamille) {
     var pdv = pointDeVentePourFiltrage();
     return listes.stock
-      .filter(function(a) { return a.famille === nomFamille && (!pdv || correspondPointDeVente(a.depot, pdv)); })
+      .filter(function(a) { return a.famille === nomFamille && (estService(a) || !pdv || correspondPointDeVente(a.depot, pdv)); })
       .reduce(function(t, a) { return t + (Number(a.quantite) || 0); }, 0);
   }
 
@@ -598,7 +604,7 @@
     var pdv = pointDeVentePourFiltrage();
     var liste = listes.stock;
     if (familleFiltre) liste = liste.filter(function(a) { return a.famille === familleFiltre; });
-    if (pdv) liste = liste.filter(function(a) { return correspondPointDeVente(a.depot, pdv); });
+    if (pdv) liste = liste.filter(function(a) { return estService(a) || correspondPointDeVente(a.depot, pdv); });
 
     select.innerHTML = '<option value="">Choisir un article du stock…</option>' +
       liste.map(function(a) {
