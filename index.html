@@ -630,9 +630,26 @@
     });
   }
 
+  var FAMILLE_CHEQUE = 'Chèque Cadeau';
+
+  // Les champs N° de chèque et bénéficiaire ne concernent que les chèques cadeaux :
+  // affichés pour cette famille, vidés dès qu'on en change pour ne pas laisser une
+  // valeur fantôme partir avec un article ordinaire.
+  function basculerChampsCheque(id) {
+    var famille = document.getElementById('famille-' + id).value;
+    var estCheque = (famille === FAMILLE_CHEQUE);
+    document.getElementById('rowCheque-' + id).style.display = estCheque ? 'flex' : 'none';
+    document.getElementById('rowBenef-' + id).style.display = estCheque ? 'flex' : 'none';
+    if (!estCheque) {
+      document.getElementById('cheque-' + id).value = '';
+      document.getElementById('beneficiaire-' + id).value = '';
+    }
+  }
+
   function filtrerArticlesParFamille(id) {
     var famille = document.getElementById('famille-' + id).value;
     remplirSelectStock(document.getElementById('stock-' + id), famille);
+    basculerChampsCheque(id);
     choisirArticleStock(id);
   }
 
@@ -679,6 +696,18 @@
         '<span class="fi">✏️</span>' +
         '<div class="fb"><div class="fl">Désignation *</div>' +
         '<input type="text" id="designation-' + id + '" class="fv" placeholder="Description de l\'article"></div>' +
+      '</div>' +
+      // Chèque cadeau : le numéro est celui imprimé sur le chéquier, et le bénéficiaire
+      // n'est presque jamais l'acheteur. Ces deux champs n'apparaissent que pour cette famille.
+      '<div class="fr" id="rowCheque-' + id + '" style="display:none">' +
+        '<span class="fi">🎁</span>' +
+        '<div class="fb"><div class="fl">N° du chèque cadeau *</div>' +
+        '<input type="text" id="cheque-' + id + '" class="fv" placeholder="ex : 21-0012"></div>' +
+      '</div>' +
+      '<div class="fr" id="rowBenef-' + id + '" style="display:none">' +
+        '<span class="fi">🎀</span>' +
+        '<div class="fb"><div class="fl">Bénéficiaire (la personne qui fera l\'atelier)</div>' +
+        '<input type="text" id="beneficiaire-' + id + '" class="fv" placeholder="Prénom Nom"></div>' +
       '</div>' +
       '<div class="fr">' +
         '<span class="fi">€</span>' +
@@ -1003,11 +1032,17 @@
       var selectStock = document.getElementById('stock-' + id);
       var estStock = selectStock.value && selectStock.value !== '__hors_stock__';
       var opt = estStock ? selectStock.options[selectStock.selectedIndex] : null;
+      // La famille vient de l'article de stock choisi ; à défaut (article hors stock),
+      // du menu Famille — sans quoi un chèque cadeau saisi librement ne serait pas
+      // reconnu comme tel et n'entrerait pas dans le registre.
+      var familleMenu = document.getElementById('famille-' + id).value;
       return {
         designation: document.getElementById('designation-' + id).value,
         montant: document.getElementById('montant-' + id).value,
         stockId: estStock ? selectStock.value : '',
-        famille: opt ? opt.getAttribute('data-famille') : ''
+        famille: (opt ? opt.getAttribute('data-famille') : '') || familleMenu,
+        numeroCheque: document.getElementById('cheque-' + id).value,
+        beneficiaire: document.getElementById('beneficiaire-' + id).value
       };
     });
 
@@ -1039,6 +1074,11 @@
       for (var i = 0; i < articles.length; i++) {
         if (!articles[i].designation || !articles[i].montant) {
           afficherMessage('Chaque article doit avoir une désignation et un montant.', 'erreur');
+          return;
+        }
+        // Sans numéro, le chèque est introuvable le jour où le bénéficiaire se présente.
+        if (articles[i].famille === FAMILLE_CHEQUE && !String(articles[i].numeroCheque).trim()) {
+          afficherMessage('Reportez le numéro imprimé sur le chèque cadeau (ex : 21-0012).', 'erreur');
           return;
         }
       }
