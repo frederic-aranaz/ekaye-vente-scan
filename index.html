@@ -372,6 +372,18 @@
       <button type="button" class="add-btn" onclick="ajouterArticle()">+ Ajouter un article</button>
     </div>
 
+    <!-- Remise sur l'ensemble du panier, répartie au prorata sur chaque ligne -->
+    <div class="fr">
+      <span class="fi">🎯</span>
+      <div class="fb"><div class="fl">Remise exceptionnelle sur le panier</div>
+      <div style="display:flex;gap:8px">
+        <input type="number" step="0.01" min="0" id="remisePanier" class="fv" placeholder="0" style="flex:1" oninput="recalculerTotal()">
+        <select id="remisePanierUnite" class="fv" style="flex:none;width:70px" onchange="recalculerTotal()">
+          <option value="€">€</option><option value="%">%</option>
+        </select>
+      </div></div>
+    </div>
+
     <!-- Total bar -->
     <div class="total-bar">
       <div>
@@ -746,6 +758,18 @@
         '<span class="fi">€</span>' +
         '<div class="fb"><div class="fl">Montant brut (€) *</div>' +
         '<input type="number" step="0.01" min="0" id="montant-' + id + '" class="fv" placeholder="0,00" oninput="recalculerTotal()"></div>' +
+      '</div>' +
+      // Remise sur cette ligne seulement. Le montant ci-dessus reste le prix affiché ;
+      // la remise est tracée à part pour qu'on sache toujours ce qui a été consenti.
+      '<div class="fr">' +
+        '<span class="fi">🏷️</span>' +
+        '<div class="fb"><div class="fl">Remise sur cet article</div>' +
+        '<div style="display:flex;gap:8px">' +
+          '<input type="number" step="0.01" min="0" id="remise-' + id + '" class="fv" placeholder="0" style="flex:1" oninput="recalculerTotal()">' +
+          '<select id="remiseUnite-' + id + '" class="fv" style="flex:none;width:70px" onchange="recalculerTotal()">' +
+            '<option value="€">€</option><option value="%">%</option>' +
+          '</select>' +
+        '</div></div>' +
       '</div>';
     document.getElementById('articles').appendChild(div);
     remplirSelectFamilles(document.getElementById('famille-' + id));
@@ -985,12 +1009,63 @@
   }
 
   /* ── Calculs ── */
-  function recalculerTotal() {
-    var total = 0;
-    listeArticlesDOM().forEach(function(div) {
+  function arrondi2(x) { return Math.round(x * 100) / 100; }
+
+  // Une remise ne peut ni être négative, ni dépasser ce sur quoi elle porte.
+  function valeurRemise(valeur, unite, base) {
+    var v = parseFloat(String(valeur).replace(',', '.')) || 0;
+    if (v <= 0 || base <= 0) return 0;
+    var r = (unite === '%') ? base * v / 100 : v;
+    return arrondi2(Math.min(Math.max(r, 0), base));
+  }
+
+  // Calcule, pour chaque ligne : le prix avant remise, la remise totale consentie
+  // (remise de ligne + quote-part de la remise du panier) et le montant encaissé.
+  //
+  // La remise du panier est répartie au prorata puis arrondie au centime : les arrondis
+  // ne retombent pas forcément sur le compte, donc le reliquat est reporté sur la
+  // dernière ligne. Sans ça, la somme des lignes s'écarterait du total encaissé et le
+  // serveur refuserait la vente.
+  function calculerLignes() {
+    var lignes = listeArticlesDOM().map(function(div) {
       var id = div.id.split('-')[1];
-      total += parseFloat(document.getElementById('montant-' + id).value) || 0;
+      var prixAvant = arrondi2(parseFloat(document.getElementById('montant-' + id).value) || 0);
+      var remiseLigne = valeurRemise(
+        document.getElementById('remise-' + id).value,
+        document.getElementById('remiseUnite-' + id).value,
+        prixAvant
+      );
+      return { id: id, prixAvant: prixAvant, remiseLigne: remiseLigne, sousTotal: arrondi2(prixAvant - remiseLigne) };
     });
+
+    var basePanier = arrondi2(lignes.reduce(function(s, l) { return s + l.sousTotal; }, 0));
+    var remisePanier = valeurRemise(
+      document.getElementById('remisePanier').value,
+      document.getElementById('remisePanierUnite').value,
+      basePanier
+    );
+
+    var reparti = 0;
+    lignes.forEach(function(l, i) {
+      var part = 0;
+      if (remisePanier > 0 && basePanier > 0) {
+        part = (i === lignes.length - 1)
+          ? arrondi2(remisePanier - reparti)
+          : arrondi2(remisePanier * l.sousTotal / basePanier);
+        reparti = arrondi2(reparti + part);
+      }
+      l.partPanier = part;
+      l.remiseTotale = arrondi2(l.remiseLigne + part);
+      l.montant = arrondi2(l.sousTotal - part);
+    });
+
+    return lignes;
+  }
+
+  function recalculerTotal() {
+    var lignes = calculerLignes();
+    var total = arrondi2(lignes.reduce(function(s, l) { return s + l.montant; }, 0));
+    var totalRemise = arrondi2(lignes.reduce(function(s, l) { return s + l.remiseTotale; }, 0));
     document.getElementById('total').textContent = total.toFixed(2).replace('.', ',');
 
     // Auto-copie CB si seul mode actif
@@ -1012,10 +1087,11 @@
         }
       }
     });
-    var detail = commSumUp > 0
-      ? 'Comm. SumUp : ' + commSumUp.toFixed(2).replace('.', ',') + ' €'
-      : '';
-    document.getElementById('detail-commissions').textContent = total > 0 && detail ? detail : '—';
+    var morceaux = [];
+    // La remise se voit dans le total, sinon elle s'applique sans qu'on s'en aperçoive.
+    if (totalRemise > 0) morceaux.push('Remise : −' + totalRemise.toFixed(2).replace('.', ',') + ' €');
+    if (commSumUp > 0) morceaux.push('Comm. SumUp : ' + commSumUp.toFixed(2).replace('.', ',') + ' €');
+    document.getElementById('detail-commissions').textContent = morceaux.length ? morceaux.join(' · ') : '—';
 
     // Écart paiement
     var totalPaye = 0;
@@ -1060,8 +1136,12 @@
       return;
     }
 
+    var lignesCalculees = {};
+    calculerLignes().forEach(function(l) { lignesCalculees[l.id] = l; });
+
     var articlesBruts = listeArticlesDOM().map(function(div) {
       var id = div.id.split('-')[1];
+      var calc = lignesCalculees[id] || { montant: 0, prixAvant: 0, remiseTotale: 0 };
       var selectStock = document.getElementById('stock-' + id);
       var estStock = selectStock.value && selectStock.value !== '__hors_stock__';
       var opt = estStock ? selectStock.options[selectStock.selectedIndex] : null;
@@ -1071,7 +1151,11 @@
       var familleMenu = document.getElementById('famille-' + id).value;
       return {
         designation: document.getElementById('designation-' + id).value,
-        montant: document.getElementById('montant-' + id).value,
+        // Montant réellement encaissé, remises déduites. Le prix d'origine part à part
+        // pour rester lisible dans la Saisie.
+        montant: document.getElementById('montant-' + id).value === '' ? '' : calc.montant,
+        prixAvantRemise: calc.prixAvant,
+        remise: calc.remiseTotale,
         stockId: estStock ? selectStock.value : '',
         famille: (opt ? opt.getAttribute('data-famille') : '') || familleMenu,
         estCheque: articleEstCheque(id),
@@ -1106,7 +1190,9 @@
 
     if (articles.length > 0) {
       for (var i = 0; i < articles.length; i++) {
-        if (!articles[i].designation || !articles[i].montant) {
+        // On valide sur le prix d'origine : une remise de 100 % ramène le montant à 0,
+        // ce qui est une vente légitime (pièce offerte) et ne doit pas être refusé.
+        if (!articles[i].designation || !articles[i].prixAvantRemise) {
           afficherMessage('Chaque article doit avoir une désignation et un montant.', 'erreur');
           return;
         }
@@ -1197,6 +1283,9 @@
   function reinitialiserFormulaire() {
     document.getElementById('articles').innerHTML = '';
     compteurArticle = 0;
+    // Une remise est exceptionnelle : elle ne doit jamais survivre à la vente suivante.
+    document.getElementById('remisePanier').value = '';
+    document.getElementById('remisePanierUnite').value = '€';
     listes.modesPaiement.forEach(function(mode) {
       var slug = slugMode(mode);
       var chip = document.getElementById('chip-' + slug);
