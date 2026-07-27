@@ -616,6 +616,7 @@
         var indicSerie = a.type === 'Série' ? ' (' + a.quantite + ' dispo)' : '';
         return '<option value="' + a.id + '" data-famille="' + famille.replace(/"/g, '&quot;') +
           '" data-designation="' + designation.replace(/"/g, '&quot;') +
+          '" data-type="' + String(a.type || '') +
           '" data-prix="' + prix + '">' +
           libelle + ' — ' + prix.toFixed(2).replace('.', ',') + ' €' + indicSerie + '</option>';
       }).join('') +
@@ -632,18 +633,38 @@
 
   var FAMILLE_CHEQUE = 'Chèque Cadeau';
 
+  // Un atelier se vend de deux façons : payé sur place, ou offert sous forme de chèque
+  // cadeau. Même article, même prix — seule la case « Offert » les distingue, et c'est
+  // elle qui ouvre la créance dans le registre des chèques.
+  function articleEstCheque(id) {
+    if (document.getElementById('famille-' + id).value === FAMILLE_CHEQUE) return true;
+    var caseOfferte = document.getElementById('offert-' + id);
+    return !!(caseOfferte && caseOfferte.checked &&
+      document.getElementById('rowOffert-' + id).style.display !== 'none');
+  }
+
   // Les champs N° de chèque et bénéficiaire ne concernent que les chèques cadeaux :
-  // affichés pour cette famille, vidés dès qu'on en change pour ne pas laisser une
-  // valeur fantôme partir avec un article ordinaire.
+  // affichés dans ce cas, vidés dès qu'on en sort pour ne pas laisser une valeur
+  // fantôme partir avec un article ordinaire.
   function basculerChampsCheque(id) {
-    var famille = document.getElementById('famille-' + id).value;
-    var estCheque = (famille === FAMILLE_CHEQUE);
+    var estCheque = articleEstCheque(id);
     document.getElementById('rowCheque-' + id).style.display = estCheque ? 'flex' : 'none';
     document.getElementById('rowBenef-' + id).style.display = estCheque ? 'flex' : 'none';
     if (!estCheque) {
       document.getElementById('cheque-' + id).value = '';
       document.getElementById('beneficiaire-' + id).value = '';
     }
+  }
+
+  // La case « Offert » n'a de sens que sur un service : une pièce unique part avec
+  // l'acheteur, elle ne crée pas de créance à honorer plus tard.
+  function basculerCaseOfferte(id) {
+    var select = document.getElementById('stock-' + id);
+    var opt = select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
+    var estServiceChoisi = !!(opt && opt.getAttribute('data-type') === 'Service');
+    var ligne = document.getElementById('rowOffert-' + id);
+    ligne.style.display = estServiceChoisi ? 'flex' : 'none';
+    if (!estServiceChoisi) document.getElementById('offert-' + id).checked = false;
   }
 
   function filtrerArticlesParFamille(id) {
@@ -667,6 +688,8 @@
       champDesig.value = opt.getAttribute('data-designation');
       champMontant.value = opt.getAttribute('data-prix');
     }
+    basculerCaseOfferte(id);
+    basculerChampsCheque(id);
     recalculerTotal();
   }
 
@@ -697,8 +720,18 @@
         '<div class="fb"><div class="fl">Désignation *</div>' +
         '<input type="text" id="designation-' + id + '" class="fv" placeholder="Description de l\'article"></div>' +
       '</div>' +
+      // Un atelier vendu sous forme de chèque cadeau : même article, même prix, mais il
+      // ouvre une créance. La case n'apparaît que sur les services.
+      '<div class="fr" id="rowOffert-' + id + '" style="display:none">' +
+        '<span class="fi">🎁</span>' +
+        '<div class="fb"><div class="fl">Vendu sous forme de chèque cadeau</div>' +
+        '<label class="fv" style="display:flex;align-items:center;gap:10px;cursor:pointer">' +
+          '<input type="checkbox" id="offert-' + id + '" onchange="basculerChampsCheque(' + id + ')" style="width:18px;height:18px;flex:none">' +
+          '<span>Oui — l\'acheteur l\'offre, l\'atelier sera fait plus tard</span>' +
+        '</label></div>' +
+      '</div>' +
       // Chèque cadeau : le numéro est celui imprimé sur le chéquier, et le bénéficiaire
-      // n'est presque jamais l'acheteur. Ces deux champs n'apparaissent que pour cette famille.
+      // n'est presque jamais l'acheteur.
       '<div class="fr" id="rowCheque-' + id + '" style="display:none">' +
         '<span class="fi">🎁</span>' +
         '<div class="fb"><div class="fl">N° du chèque cadeau *</div>' +
@@ -1041,6 +1074,7 @@
         montant: document.getElementById('montant-' + id).value,
         stockId: estStock ? selectStock.value : '',
         famille: (opt ? opt.getAttribute('data-famille') : '') || familleMenu,
+        estCheque: articleEstCheque(id),
         numeroCheque: document.getElementById('cheque-' + id).value,
         beneficiaire: document.getElementById('beneficiaire-' + id).value
       };
@@ -1077,7 +1111,7 @@
           return;
         }
         // Sans numéro, le chèque est introuvable le jour où le bénéficiaire se présente.
-        if (articles[i].famille === FAMILLE_CHEQUE && !String(articles[i].numeroCheque).trim()) {
+        if (articles[i].estCheque && !String(articles[i].numeroCheque).trim()) {
           afficherMessage('Reportez le numéro imprimé sur le chèque cadeau (ex : 21-0012).', 'erreur');
           return;
         }
