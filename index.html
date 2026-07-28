@@ -474,12 +474,15 @@
           </div>
           <div id="villeSuggestions" class="ville-suggestions"></div>
         </div>
-        <div class="fr">
-          <span class="fi">🏙</span>
-          <div class="fb">
-            <div class="fl">Ville</div>
-            <input type="text" id="clientVille" class="fv" placeholder="Libourne">
+        <div style="position:relative">
+          <div class="fr">
+            <span class="fi">🏙</span>
+            <div class="fb">
+              <div class="fl">Ville</div>
+              <input type="text" id="clientVille" class="fv" placeholder="Libourne" autocomplete="off">
+            </div>
           </div>
+          <div id="communeSuggestions" class="ville-suggestions"></div>
         </div>
         <div class="fr">
           <span class="fi">🌍</span>
@@ -1364,6 +1367,8 @@
     document.getElementById('ecart-paiement').innerHTML = '';
     masquerSuggestionsVille();
     codePostalRecherche = '';
+    masquerSuggestionsCommune();
+    communeRecherche = '';
     // Rafraîchit les totaux (nombre de pièces) du sélecteur point de vente
     var pdvSelect = document.getElementById('pointDeVente');
     var pdvVal = pdvSelect.value;
@@ -1426,6 +1431,68 @@
   document.getElementById('clientCodePostal').addEventListener('input', chercherVillesParCodePostal);
   document.getElementById('clientCodePostal').addEventListener('blur', function() {
     setTimeout(masquerSuggestionsVille, 150); // laisse le clic sur une suggestion aboutir
+  });
+
+  /* ── Suggestion de commune (+ code postal) depuis le nom de ville tapé ── */
+  // Sens inverse du précédent : recherche floue par nom, debattue (l'utilisateur tape
+  // lettre par lettre). Remplit le code postal seulement si la commune n'en a qu'un
+  // (les grandes villes en ont plusieurs : Paris, Lyon, Marseille...), sans jamais
+  // écraser une saisie manuelle déjà présente.
+  var communeRecherche = '';
+  var communeRechercheTimer = null;
+
+  function masquerSuggestionsCommune() {
+    var box = document.getElementById('communeSuggestions');
+    box.classList.remove('visible');
+    box.innerHTML = '';
+  }
+
+  function choisirCommune(nom, codePostal) {
+    document.getElementById('clientVille').value = nom;
+    if (codePostal) {
+      var cpInput = document.getElementById('clientCodePostal');
+      if (!cpInput.value.trim()) cpInput.value = codePostal;
+    }
+    masquerSuggestionsCommune();
+  }
+
+  function chercherCommunesParNom() {
+    var nom = document.getElementById('clientVille').value.trim();
+    clearTimeout(communeRechercheTimer);
+    if (nom.length < 2) {
+      masquerSuggestionsCommune();
+      communeRecherche = '';
+      return;
+    }
+    communeRechercheTimer = setTimeout(function() {
+      if (nom === communeRecherche) return;
+      communeRecherche = nom;
+      fetch('https://geo.api.gouv.fr/communes?nom=' + encodeURIComponent(nom) + '&fields=nom,codesPostaux&boost=population&limit=8')
+        .then(function(r) { return r.json(); })
+        .then(function(communes) {
+          // La saisie a continué pendant l'appel : cette réponse est obsolète.
+          if (document.getElementById('clientVille').value.trim() !== nom) return;
+          if (!Array.isArray(communes) || communes.length === 0) {
+            masquerSuggestionsCommune();
+            return;
+          }
+          var box = document.getElementById('communeSuggestions');
+          box.innerHTML = communes.map(function(c) {
+            var cps = c.codesPostaux || [];
+            var cpUnique = cps.length === 1 ? cps[0] : '';
+            var nomEchappe = c.nom.replace(/'/g, "\\'");
+            var suffixe = cps.length ? ' <span style="color:var(--text-3);font-size:12px">(' + cps.join(', ') + ')</span>' : '';
+            return '<button type="button" onclick="choisirCommune(\'' + nomEchappe + '\', \'' + cpUnique + '\')">' + c.nom + suffixe + '</button>';
+          }).join('');
+          box.classList.add('visible');
+        })
+        .catch(function() { /* API indisponible : saisie manuelle, pas bloquant */ });
+    }, 300);
+  }
+
+  document.getElementById('clientVille').addEventListener('input', chercherCommunesParNom);
+  document.getElementById('clientVille').addEventListener('blur', function() {
+    setTimeout(masquerSuggestionsCommune, 150);
   });
 
   // Auto-sélection du contenu au focus sur les champs numériques
