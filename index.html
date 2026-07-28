@@ -111,6 +111,28 @@
     /* ── Champ libre point de vente ── */
     .pdv-libre { display: none; border-top: 0.5px solid var(--borderdiv); }
 
+    /* ── Suggestions de ville (code postal → geo.api.gouv.fr) ── */
+    .ville-suggestions {
+      display: none;
+      position: absolute; left: 0; right: 0; top: 100%;
+      z-index: 20; margin-top: 4px;
+      background: var(--bg-card2);
+      border: 0.5px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+    .ville-suggestions.visible { display: block; }
+    .ville-suggestions button {
+      display: block; width: 100%; text-align: left;
+      padding: 10px 14px; background: none; border: none;
+      border-bottom: 0.5px solid var(--borderdiv);
+      color: var(--text); font-size: 14px; font-family: var(--font);
+      cursor: pointer;
+    }
+    .ville-suggestions button:last-child { border-bottom: none; }
+    .ville-suggestions button:active, .ville-suggestions button:hover { background: rgba(201,136,42,0.12); }
+
     /* ── Scan caméra ── */
     .scan-card {
       background: var(--bg-card);
@@ -441,12 +463,16 @@
             <input type="text" id="clientAdresse" class="fv" placeholder="12 rue des Lilas">
           </div>
         </div>
-        <div class="fr">
-          <span class="fi">🗺</span>
-          <div class="fb">
-            <div class="fl">Code postal</div>
-            <input type="text" id="clientCodePostal" class="fv" placeholder="33500">
+        <div style="position:relative">
+          <div class="fr">
+            <span class="fi">🗺</span>
+            <div class="fb">
+              <div class="fl">Code postal</div>
+              <input type="text" id="clientCodePostal" class="fv" placeholder="33500"
+                     inputmode="numeric" maxlength="5" autocomplete="off">
+            </div>
           </div>
+          <div id="villeSuggestions" class="ville-suggestions"></div>
         </div>
         <div class="fr">
           <span class="fi">🏙</span>
@@ -1336,6 +1362,8 @@
     document.getElementById('clientNote').value = '';
     document.getElementById('clientConsentement').checked = false;
     document.getElementById('ecart-paiement').innerHTML = '';
+    masquerSuggestionsVille();
+    codePostalRecherche = '';
     // Rafraîchit les totaux (nombre de pièces) du sélecteur point de vente
     var pdvSelect = document.getElementById('pointDeVente');
     var pdvVal = pdvSelect.value;
@@ -1347,6 +1375,58 @@
     bouton.disabled = false;
     bouton.textContent = 'Enregistrer la vente';
   }
+
+  /* ── Suggestion de ville depuis le code postal (API publique geo.api.gouv.fr) ── */
+  // Un seul résultat : remplit directement (sans écraser une ville déjà saisie à la
+  // main). Plusieurs résultats (code partagé entre communes) : liste à choix.
+  var codePostalRecherche = '';
+
+  function masquerSuggestionsVille() {
+    var box = document.getElementById('villeSuggestions');
+    box.classList.remove('visible');
+    box.innerHTML = '';
+  }
+
+  function choisirVille(nom) {
+    document.getElementById('clientVille').value = nom;
+    masquerSuggestionsVille();
+  }
+
+  function chercherVillesParCodePostal() {
+    var cp = document.getElementById('clientCodePostal').value.trim();
+    if (!/^[0-9]{5}$/.test(cp)) {
+      masquerSuggestionsVille();
+      codePostalRecherche = '';
+      return;
+    }
+    if (cp === codePostalRecherche) return;
+    codePostalRecherche = cp;
+    fetch('https://geo.api.gouv.fr/communes?codePostal=' + cp + '&fields=nom&format=json')
+      .then(function(r) { return r.json(); })
+      .then(function(communes) {
+        if (cp !== codePostalRecherche || !Array.isArray(communes) || communes.length === 0) {
+          masquerSuggestionsVille();
+          return;
+        }
+        if (communes.length === 1) {
+          var villeInput = document.getElementById('clientVille');
+          if (!villeInput.value.trim()) villeInput.value = communes[0].nom;
+          masquerSuggestionsVille();
+          return;
+        }
+        var box = document.getElementById('villeSuggestions');
+        box.innerHTML = communes.map(function(c) {
+          return '<button type="button" onclick="choisirVille(\'' + c.nom.replace(/'/g, "\\'") + '\')">' + c.nom + '</button>';
+        }).join('');
+        box.classList.add('visible');
+      })
+      .catch(function() { /* API indisponible : saisie manuelle, pas bloquant */ });
+  }
+
+  document.getElementById('clientCodePostal').addEventListener('input', chercherVillesParCodePostal);
+  document.getElementById('clientCodePostal').addEventListener('blur', function() {
+    setTimeout(masquerSuggestionsVille, 150); // laisse le clic sur une suggestion aboutir
+  });
 
   // Auto-sélection du contenu au focus sur les champs numériques
   document.addEventListener('focus', function(e) {
