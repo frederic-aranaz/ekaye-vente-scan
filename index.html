@@ -315,6 +315,34 @@
     .msg { padding: 12px 14px; border-radius: var(--r); font-size: 13px; }
     .msg.ok  { background: rgba(80,160,90,0.12); color: #7ed18a; border: 0.5px solid rgba(80,160,90,0.3); }
     .msg.erreur { background: rgba(160,60,60,0.12); color: #e07070; border: 0.5px solid rgba(160,60,60,0.3); }
+    .msg.attente { background: rgba(201,136,42,0.12); color: var(--ek-dark); border: 0.5px solid var(--border); }
+
+    /* ── File d'attente (mode hors-ligne) ── */
+    .attente-card {
+      background: rgba(201,136,42,0.08); border: 0.5px solid var(--border);
+      border-radius: var(--r); overflow: hidden;
+    }
+    .attente-titre {
+      padding: 11px 14px; font-size: 12px; font-weight: 700; color: var(--ek-dark);
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      border-bottom: 0.5px solid var(--borderdiv);
+    }
+    .attente-ligne {
+      padding: 10px 14px; font-size: 12px; color: var(--text-2);
+      border-bottom: 0.5px solid var(--borderdiv);
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .attente-ligne:last-child { border-bottom: none; }
+    .attente-erreur { color: #e07070; font-size: 11px; margin-top: 2px; }
+    .attente-suppr {
+      background: none; border: none; color: var(--text-3); font-size: 12px;
+      cursor: pointer; text-decoration: underline; flex-shrink: 0; padding: 4px;
+    }
+    .attente-actions { padding: 4px 14px 11px; }
+    .attente-actions button {
+      width: 100%; padding: 9px; background: var(--ek); color: #1a1208; border: none;
+      border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer;
+    }
 
     /* ── Config API + chargement ── */
     .config {
@@ -343,6 +371,8 @@
   </div>
 
   <div class="body">
+
+    <div id="attenteBox" class="attente-card" style="display:none;margin-bottom:1.25rem"></div>
 
     <div id="chargement" class="chargement">Chargement du stock…</div>
 
@@ -574,6 +604,135 @@
     return 'p-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
   }
 
+  /* ── Mode hors-ligne : file d'attente des ventes non envoyées ──────────── */
+  // En salon, si le réseau tombe au moment d'encaisser, la vente n'est PAS perdue :
+  // elle est gardée sur ce téléphone (localStorage) et renvoyée automatiquement dès
+  // que la connexion revient. Chaque vente en attente garde son idPanier d'origine :
+  // grâce à l'idempotence côté script, la renvoyer plus tard — même en double par
+  // erreur — n'écrit jamais deux fois.
+  var CLE_FILE_ATTENTE = 'ekaye_vente_file_attente';
+  var envoiFileEnCours = false;
+
+  function fileAttente() {
+    try {
+      return JSON.parse(localStorage.getItem(CLE_FILE_ATTENTE) || '[]');
+    } catch (e) { return []; }
+  }
+
+  function sauvegarderFileAttente(file) {
+    localStorage.setItem(CLE_FILE_ATTENTE, JSON.stringify(file));
+  }
+
+  function retirerVenteDeLaFile(idPanier) {
+    sauvegarderFileAttente(fileAttente().filter(function(v) { return v.idPanier !== idPanier; }));
+  }
+
+  // La page ne peut pas savoir, hors-ligne, si une pièce unique reste vraiment
+  // disponible : elle retire localement ce qui vient d'être mis en attente pour ne
+  // pas proposer deux fois la même pièce avant le retour du réseau. Purement indicatif
+  // (le stock réel, lui, ne bouge qu'à la synchronisation avec le script).
+  function decrementerStockLocal(articles) {
+    articles.forEach(function(article) {
+      if (!article.stockId) return;
+      var idx = listes.stock.findIndex(function(a) { return String(a.id) === String(article.stockId); });
+      if (idx === -1) return;
+      if (listes.stock[idx].type === 'Série') {
+        listes.stock[idx].quantite = Math.max(0, (Number(listes.stock[idx].quantite) || 0) - 1);
+      } else {
+        listes.stock.splice(idx, 1);
+      }
+    });
+  }
+
+  function mettreVenteEnAttente(vente) {
+    var file = fileAttente();
+    vente.horodatage = Date.now();
+    file.push(vente);
+    sauvegarderFileAttente(file);
+    decrementerStockLocal(vente.articles || []);
+    afficherFileAttente();
+  }
+
+  function supprimerVenteEnAttente(idPanier) {
+    if (!window.confirm('Supprimer définitivement cette vente en attente ? Elle ne sera jamais envoyée.')) return;
+    retirerVenteDeLaFile(idPanier);
+    afficherFileAttente();
+  }
+
+  function afficherFileAttente() {
+    var box = document.getElementById('attenteBox');
+    var file = fileAttente();
+    if (file.length === 0) {
+      box.style.display = 'none';
+      box.innerHTML = '';
+      return;
+    }
+    box.style.display = 'block';
+    box.innerHTML = '<div class="attente-titre"><span>🕐 ' + file.length +
+      ' vente(s) en attente d\'envoi</span></div>' +
+      file.map(function(v) {
+        var heure = new Date(v.horodatage).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+        var total = (v.articles || []).reduce(function(s, a) { return s + (parseFloat(a.montant) || 0); }, 0);
+        var resume = (v.pointDeVente || '?') + ' — ' + (v.articles || []).length + ' article(s), ' +
+          total.toFixed(2).replace('.', ',') + ' € (' + heure + ')';
+        var erreur = v.derniereErreur ? '<div class="attente-erreur">⚠ ' + v.derniereErreur + '</div>' : '';
+        return '<div class="attente-ligne"><div>' + resume + erreur + '</div>' +
+          '<button type="button" class="attente-suppr" onclick="supprimerVenteEnAttente(\'' + v.idPanier + '\')">Supprimer</button></div>';
+      }).join('') +
+      '<div class="attente-actions"><button type="button" onclick="tenterEnvoiFileAttente()">Réessayer maintenant</button></div>';
+  }
+
+  // Envoie la file une vente à la fois (jamais en parallèle) : plus simple à raisonner,
+  // et la file est petite (quelques ventes maximum en pratique). S'arrête dès qu'une
+  // panne réseau est rencontrée — pas la peine d'insister tout de suite sur les suivantes.
+  function tenterEnvoiFileAttente() {
+    if (envoiFileEnCours) return;
+    var idsAEssayer = fileAttente().map(function(v) { return v.idPanier; });
+    if (idsAEssayer.length === 0) return;
+    envoiFileEnCours = true;
+    envoyerFileAttentePas_(idsAEssayer);
+  }
+
+  // idsRestants : instantané des identifiants à essayer pour cette passe, fixé au
+  // départ — une vente en erreur définitive (ex : total incohérent, chèque déjà
+  // utilisé) n'est donc tentée qu'une fois par passe, jamais en boucle infinie ;
+  // elle reste visible avec son erreur pour que Frédéric la corrige ou la supprime.
+  function envoyerFileAttentePas_(idsRestants) {
+    if (idsRestants.length === 0) {
+      envoiFileEnCours = false;
+      afficherFileAttente();
+      return;
+    }
+    var idPanier = idsRestants[0];
+    var vente = fileAttente().find(function(v) { return v.idPanier === idPanier; });
+    if (!vente) { // supprimée manuellement entre-temps
+      envoyerFileAttentePas_(idsRestants.slice(1));
+      return;
+    }
+    appelApi('enregistrerVentePanier', vente)
+      .then(function(resultat) {
+        // Un refus de clé remonte par .catch (voir appelApi), jamais ici : un
+        // resultat.erreur à ce stade est donc toujours une erreur de validation
+        // définitive (total incohérent, chèque déjà utilisé...), pas un problème réseau.
+        if (resultat && resultat.erreur) {
+          var f = fileAttente();
+          var v = f.find(function(x) { return x.idPanier === idPanier; });
+          if (v) v.derniereErreur = resultat.erreur;
+          sauvegarderFileAttente(f);
+        } else {
+          retirerVenteDeLaFile(idPanier);
+        }
+        envoyerFileAttentePas_(idsRestants.slice(1));
+      })
+      .catch(function() {
+        // Panne réseau, ou clé refusée (l'ancienne clé a déjà été oubliée par appelApi) :
+        // on s'arrête là pour cette passe, on réessaiera au prochain événement "online",
+        // minuteur, ou tap sur "Réessayer maintenant".
+        envoiFileEnCours = false;
+        afficherFileAttente();
+      });
+  }
+
   // Tous les appels passent par ici : POST, clé dans le corps (jamais dans l'URL, qui
   // se retrouverait dans l'historique du navigateur et les journaux de Google).
   function appelApi(action, data) {
@@ -588,7 +747,11 @@
       // que de boucler indéfiniment sur une clé fausse mémorisée.
       if (reponse && reponse.authRefusee) {
         oublierCle();
-        throw new Error('Clé d\'accès refusée. Rechargez la page pour la ressaisir.');
+        // Marqué .authRefusee pour que les appelants distinguent ce cas (à corriger
+        // tout de suite) d'une vraie panne réseau (à mettre en attente, voir plus bas).
+        var erreurCle = new Error('Clé d\'accès refusée. Rechargez la page pour la ressaisir.');
+        erreurCle.authRefusee = true;
+        throw erreurCle;
       }
       return reponse;
     });
@@ -1322,10 +1485,12 @@
     // Réutilisé tel quel si cette tentative est une retentative (voir plus haut).
     if (!idPanierActuel) idPanierActuel = genererIdPanier();
 
-    appelApi('enregistrerVentePanier', {
+    var donneesVente = {
       idPanier: idPanierActuel, pointDeVente: pointDeVente, date: date,
       paiements: paiements, articles: articles, client: client
-    })
+    };
+
+    appelApi('enregistrerVentePanier', donneesVente)
     .then(function(resultat) {
       if (resultat && resultat.erreur) {
         afficherMessage('Erreur : ' + resultat.erreur, 'erreur');
@@ -1341,10 +1506,20 @@
       rechargerStockPuisReinitialiser();
     })
     .catch(function(erreur) {
-      // Peut aussi être un refus de clé, pas seulement un problème de réseau.
-      afficherMessage(String(erreur.message || erreur), 'erreur');
-      bouton.disabled = false;
-      bouton.textContent = 'Enregistrer la vente';
+      if (erreur && erreur.authRefusee) {
+        afficherMessage(String(erreur.message || erreur), 'erreur');
+        bouton.disabled = false;
+        bouton.textContent = 'Enregistrer la vente';
+        return;
+      }
+      // Pas de connexion (ou panne imprévue) : la vente n'est pas perdue — mise de
+      // côté sur ce téléphone, elle partira toute seule au retour du réseau.
+      mettreVenteEnAttente(donneesVente);
+      afficherMessage(
+        'Pas de connexion : la vente a été mise de côté sur ce téléphone, elle partira automatiquement dès que le réseau reviendra.',
+        'attente'
+      );
+      rechargerStockPuisReinitialiser();
     });
   }
 
@@ -1535,6 +1710,9 @@
         document.getElementById('date').value = new Date().toISOString().slice(0, 10);
         rendreChips();
         ajouterArticle();
+        // La connexion vient de se confirmer : c'est le bon moment pour vider une
+        // éventuelle file de ventes restées en attente depuis la session précédente.
+        tenterEnvoiFileAttente();
       })
       .catch(function(erreur) {
         document.getElementById('chargement').innerHTML =
@@ -1543,6 +1721,16 @@
           '<br><br><button onclick="oublierCle(); location.reload();" style="padding:8px 14px">Ressaisir la clé d\'accès</button>';
       });
   }
+
+  // Visible dès l'ouverture de la page, même si le stock ne charge pas (pas la peine
+  // d'attendre la connexion pour voir qu'il reste des ventes en attente).
+  afficherFileAttente();
+
+  // Retentative automatique : au retour du réseau (événement natif du navigateur),
+  // et en filet de sécurité toutes les 2 minutes si l'événement ne se déclenche pas
+  // de façon fiable sur ce téléphone.
+  window.addEventListener('online', tenterEnvoiFileAttente);
+  setInterval(tenterEnvoiFileAttente, 120000);
 
   chargerListes();
 </script>
