@@ -516,6 +516,42 @@
     }
   }
 
+  /* ── Clé d'accès ────────────────────────────────────────────────────── */
+  // Cette page est publique : une clé écrite ici serait lisible dans le code source.
+  // Elle est donc demandée une fois par appareil et conservée en local, jamais publiée.
+  function cleApi() {
+    var cle = localStorage.getItem('ekaye_vente_cle');
+    if (!cle) {
+      cle = (window.prompt('Clé d\'accès au registre EKAYE :') || '').trim();
+      if (cle) localStorage.setItem('ekaye_vente_cle', cle);
+    }
+    return cle;
+  }
+
+  function oublierCle() {
+    localStorage.removeItem('ekaye_vente_cle');
+  }
+
+  // Tous les appels passent par ici : POST, clé dans le corps (jamais dans l'URL, qui
+  // se retrouverait dans l'historique du navigateur et les journaux de Google).
+  function appelApi(action, data) {
+    return fetch(urlApi(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // évite le preflight CORS
+      body: JSON.stringify({ action: action, cle: cleApi(), data: data })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(reponse) {
+      // Clé refusée : on l'oublie pour que la prochaine tentative la redemande, plutôt
+      // que de boucler indéfiniment sur une clé fausse mémorisée.
+      if (reponse && reponse.authRefusee) {
+        oublierCle();
+        throw new Error('Clé d\'accès refusée. Rechargez la page pour la ressaisir.');
+      }
+      return reponse;
+    });
+  }
+
   var listes = { pointsDeVente: [], modesPaiement: [], familles: [], stock: [] };
   var compteurArticle = 0;
   var modesActifs = {};
@@ -1241,15 +1277,8 @@
     bouton.disabled = true;
     bouton.textContent = 'Enregistrement…';
 
-    fetch(urlApi(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // évite le preflight CORS
-      body: JSON.stringify({
-        action: 'enregistrerVentePanier',
-        data: { pointDeVente: pointDeVente, date: date, paiements: paiements, articles: articles, client: client }
-      })
-    })
-    .then(function(reponse) { return reponse.json(); })
+    appelApi('enregistrerVentePanier',
+      { pointDeVente: pointDeVente, date: date, paiements: paiements, articles: articles, client: client })
     .then(function(resultat) {
       if (resultat && resultat.erreur) {
         afficherMessage('Erreur : ' + resultat.erreur, 'erreur');
@@ -1265,7 +1294,8 @@
       rechargerStockPuisReinitialiser();
     })
     .catch(function(erreur) {
-      afficherMessage('Erreur réseau : ' + erreur, 'erreur');
+      // Peut aussi être un refus de clé, pas seulement un problème de réseau.
+      afficherMessage(String(erreur.message || erreur), 'erreur');
       bouton.disabled = false;
       bouton.textContent = 'Enregistrer la vente';
     });
@@ -1274,8 +1304,7 @@
   // Après une vente, on recharge le stock (les pièces vendues ont disparu / décrémenté)
   // avant de repartir sur un formulaire vierge, pour que les prochains scans soient à jour.
   function rechargerStockPuisReinitialiser() {
-    fetch(urlApi() + '?action=getListes')
-      .then(function(r) { return r.json(); })
+    appelApi('getListes')
       .then(function(data) { listes = data; reinitialiserFormulaire(); })
       .catch(function() { reinitialiserFormulaire(); });
   }
@@ -1330,9 +1359,9 @@
   document.getElementById('urlApi').value = localStorage.getItem('ekaye_vente_url_api') || '';
 
   function chargerListes() {
-    fetch(urlApi() + '?action=getListes')
-      .then(function(r) { return r.json(); })
+    appelApi('getListes')
       .then(function(data) {
+        if (data && data.erreur) throw new Error(data.erreur);
         listes = data;
         document.getElementById('chargement').style.display = 'none';
         document.getElementById('formulaire').style.display = 'flex';
@@ -1343,8 +1372,9 @@
       })
       .catch(function(erreur) {
         document.getElementById('chargement').innerHTML =
-          'Impossible de charger le stock.<br>Vérifiez la connexion, ou l\'URL de l\'Apps Script dans le réglage technique.<br><br>' +
-          '<small style="color:#a08860">' + erreur + '</small>';
+          'Impossible de charger le stock.<br>Vérifiez la clé d\'accès, la connexion, ou l\'URL de l\'Apps Script dans le réglage technique.<br><br>' +
+          '<small style="color:#a08860">' + (erreur.message || erreur) + '</small>' +
+          '<br><br><button onclick="oublierCle(); location.reload();" style="padding:8px 14px">Ressaisir la clé d\'accès</button>';
       });
   }
 
