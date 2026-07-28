@@ -561,6 +561,19 @@
     localStorage.removeItem('ekaye_vente_cle');
   }
 
+  /* ── Idempotence : identifiant de panier ── */
+  // Réseau incertain en salon : si le bouton est retapé après un envoi qui semblait
+  // bloqué, ou si le navigateur rejoue la requête après une coupure, il ne faut PAS
+  // enregistrer la vente une seconde fois. Un même identifiant est réutilisé tant que
+  // la vente n'a pas abouti ; le script le reconnaît et renvoie le même résultat sans
+  // rien réécrire (voir enregistrerVentePanier côté Apps Script).
+  var idPanierActuel = null;
+
+  function genererIdPanier() {
+    if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
+    return 'p-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  }
+
   // Tous les appels passent par ici : POST, clé dans le corps (jamais dans l'URL, qui
   // se retrouverait dans l'historique du navigateur et les journaux de Google).
   function appelApi(action, data) {
@@ -1306,8 +1319,13 @@
     bouton.disabled = true;
     bouton.textContent = 'Enregistrement…';
 
-    appelApi('enregistrerVentePanier',
-      { pointDeVente: pointDeVente, date: date, paiements: paiements, articles: articles, client: client })
+    // Réutilisé tel quel si cette tentative est une retentative (voir plus haut).
+    if (!idPanierActuel) idPanierActuel = genererIdPanier();
+
+    appelApi('enregistrerVentePanier', {
+      idPanier: idPanierActuel, pointDeVente: pointDeVente, date: date,
+      paiements: paiements, articles: articles, client: client
+    })
     .then(function(resultat) {
       if (resultat && resultat.erreur) {
         afficherMessage('Erreur : ' + resultat.erreur, 'erreur');
@@ -1369,6 +1387,7 @@
     codePostalRecherche = '';
     masquerSuggestionsCommune();
     communeRecherche = '';
+    idPanierActuel = null; // vente aboutie (ou formulaire remis à zéro) : prochaine vente, nouvel identifiant
     // Rafraîchit les totaux (nombre de pièces) du sélecteur point de vente
     var pdvSelect = document.getElementById('pointDeVente');
     var pdvVal = pdvSelect.value;
