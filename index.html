@@ -312,9 +312,14 @@
     }
 
     /* ── Messages ── */
-    .msg { padding: 12px 14px; border-radius: var(--r); font-size: 13px; }
+    /* white-space: pre-line — le compte rendu de vente met l'avertissement de
+       stock sur sa propre ligne, via un \n dans le texte. */
+    .msg { padding: 12px 14px; border-radius: var(--r); font-size: 13px; white-space: pre-line; }
     .msg.ok  { background: rgba(80,160,90,0.12); color: #7ed18a; border: 0.5px solid rgba(80,160,90,0.3); }
     .msg.erreur { background: rgba(160,60,60,0.12); color: #e07070; border: 0.5px solid rgba(160,60,60,0.3); }
+    /* La vente est bien enregistrée, mais quelque chose mérite un coup d'oeil :
+       ni vert (tout va bien) ni rouge (échec). */
+    .msg.avertissement { background: rgba(201,136,42,0.14); color: #e0a94a; border: 0.5px solid rgba(201,136,42,0.4); }
     .msg.attente { background: rgba(201,136,42,0.12); color: var(--ek-dark); border: 0.5px solid var(--border); }
 
     /* ── File d'attente (mode hors-ligne) ── */
@@ -1368,6 +1373,38 @@
     el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
+  // Compte rendu d'une vente enregistrée. Le nombre de sorties de stock n'est
+  // annoncé que si le panier contenait des articles du stock : un atelier ou un
+  // chèque cadeau ne sort de rien, l'annoncer serait du bruit.
+  //
+  // Ce compte rendu existe parce que le cas contraire était muet : une pièce
+  // déjà vendue s'enregistrait sans que rien ne signale que le stock n'avait pas
+  // bougé. Une demi-heure perdue le 07/08/2026 à chercher un bug inexistant.
+  function messageVente(r) {
+    var base = 'Vente enregistrée : ' + r.nbArticles + ' article(s), total '
+      + r.total.toFixed(2).replace('.', ',') + ' €.';
+
+    // Un déploiement Apps Script antérieur ne renvoie pas ces champs : on
+    // retombe alors sur l'ancien message, sans rien inventer.
+    var deStock = Number(r.articlesDeStock) || 0;
+    if (!deStock) return base;
+
+    var sorties = Number(r.sortiesStock) || 0;
+    base += ' ' + sorties + ' sortie(s) de stock sur ' + deStock + '.';
+
+    var introuvables = r.articlesIntrouvables || [];
+    if (introuvables.length) {
+      base += '\n⚠ Rien n\'est sorti du stock pour : ' + introuvables.join(', ')
+        + '. Pièce déjà vendue ? La vente est bien enregistrée, mais le stock n\'a pas bougé'
+        + ' — à vérifier dans le classeur.';
+    }
+    return base;
+  }
+
+  function messageVenteNiveau(r) {
+    return (r.articlesIntrouvables && r.articlesIntrouvables.length) ? 'avertissement' : 'ok';
+  }
+
   function validerVente() {
     var pointDeVente = pointDeVenteActuel();
     var date = document.getElementById('date').value;
@@ -1499,7 +1536,7 @@
         return;
       }
       if (resultat.nbArticles > 0) {
-        afficherMessage('Vente enregistrée : ' + resultat.nbArticles + ' article(s), total ' + resultat.total.toFixed(2).replace('.', ',') + ' €.', 'ok');
+        afficherMessage(messageVente(resultat), messageVenteNiveau(resultat));
       } else {
         afficherMessage('Informations client enregistrées (aucune vente).', 'ok');
       }
