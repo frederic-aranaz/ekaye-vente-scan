@@ -765,7 +765,7 @@
   var listes = { pointsDeVente: [], modesPaiement: [], familles: [], stock: [] };
   var compteurArticle = 0;
   var modesActifs = {};
-  var iconesModes = { 'CB': '💳', 'Espèces': '💵', 'Chèque': '📝' };
+  var iconesModes = { 'CB': '💳', 'Espèces': '💵', 'Chèque': '📝', 'Stripe': '🌐' };
 
   /* ── Point de vente ── */
   // Le stock déposé "Expo" (dépôt générique) doit rester visible même quand la vente
@@ -1321,22 +1321,32 @@
       if (cbInput) cbInput.value = total > 0 ? total.toFixed(2) : '';
     }
 
-    // Commission SumUp (CB uniquement, 1,75 %)
-    var commSumUp = 0;
+    // Frais de paiement. Le barème vient de l'API (listes.fraisPaiement), il n'est
+    // PAS écrit ici : le serveur reste seul juge du montant réellement enregistré,
+    // et un taux recopié des deux côtés finirait par diverger en silence.
+    // Chaque mode porte un taux proportionnel et une part fixe par transaction
+    // (Stripe : 1,5 % + 0,25 €). La part fixe se compte une fois, pas par article.
+    var fraisParMode = [];
     listes.modesPaiement.forEach(function(mode) {
-      if (mode === 'CB') {
-        var slug = slugMode(mode);
-        var chip = document.getElementById('chip-' + slug);
-        if (chip && chip.classList.contains('active')) {
-          var montantCB = parseFloat(document.getElementById('montantpaiement-' + slug).value) || 0;
-          commSumUp = montantCB * 0.0175;
-        }
-      }
+      var bareme = (listes.fraisPaiement || {})[mode];
+      if (!bareme) return;
+      if (!bareme.taux && !bareme.fixe) return;
+      var slug = slugMode(mode);
+      var chip = document.getElementById('chip-' + slug);
+      if (!chip || !chip.classList.contains('active')) return;
+      var montant = parseFloat(document.getElementById('montantpaiement-' + slug).value) || 0;
+      if (montant <= 0) return;
+      fraisParMode.push({
+        libelle: bareme.libelle || mode,
+        montant: montant * bareme.taux + bareme.fixe
+      });
     });
     var morceaux = [];
     // La remise se voit dans le total, sinon elle s'applique sans qu'on s'en aperçoive.
     if (totalRemise > 0) morceaux.push('Remise : −' + totalRemise.toFixed(2).replace('.', ',') + ' €');
-    if (commSumUp > 0) morceaux.push('Comm. SumUp : ' + commSumUp.toFixed(2).replace('.', ',') + ' €');
+    fraisParMode.forEach(function(f) {
+      morceaux.push('Comm. ' + f.libelle + ' : ' + f.montant.toFixed(2).replace('.', ',') + ' €');
+    });
     document.getElementById('detail-commissions').textContent = morceaux.length ? morceaux.join(' · ') : '—';
 
     // Écart paiement
