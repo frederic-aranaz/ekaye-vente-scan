@@ -4,7 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Registre de vente EKAYE — Scan</title>
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <!-- html5-qrcode est servi depuis CE dépôt, plus depuis unpkg : une ressource
+       d'un autre domaine ne se met en cache que sous forme de réponse "opaque",
+       dont on ne peut vérifier ni le succès ni le contenu. Sans copie locale, le
+       scan caméra serait mort hors-ligne alors que tout le reste fonctionnerait. -->
+  <script src="html5-qrcode.min.js"></script>
+
+  <!-- Application installable, et surtout ouvrable sans réseau (voir sw.js). -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#141210">
+  <link rel="icon" href="icone-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icone-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Vente EKAYE">
   <style>
     :root {
       --ek:       #c9882a;
@@ -365,7 +378,7 @@
 <body>
 <div class="wrap">
 
-  <img class="banniere" src="https://ekaye.fr/wp-content/uploads/2026/06/banniere_ekaye.jpg" alt="EKAYE — Luminaire en vitrail sur mesure à Libourne">
+  <img class="banniere" src="banniere.jpg" alt="EKAYE — Luminaire en vitrail sur mesure à Libourne">
 
   <div class="topbar">
     <div class="topbar-icon">🏮</div>
@@ -378,6 +391,8 @@
   <div class="body">
 
     <div id="attenteBox" class="attente-card" style="display:none;margin-bottom:1.25rem"></div>
+
+    <div id="secoursBox" class="msg avertissement" style="display:none;margin-bottom:1.25rem"></div>
 
     <div id="chargement" class="chargement">Chargement du stock…</div>
 
@@ -1574,7 +1589,15 @@
   // avant de repartir sur un formulaire vierge, pour que les prochains scans soient à jour.
   function rechargerStockPuisReinitialiser() {
     appelApi('getListes')
-      .then(function(data) { listes = data; reinitialiserFormulaire(); })
+      .then(function(data) {
+        if (data && data.erreur) throw new Error(data.erreur);
+        listes = data;
+        memoriserListes(data);
+        // Le stock vient d'arriver : le réseau est revenu, le bandeau n'a plus lieu d'être.
+        var box = document.getElementById('secoursBox');
+        if (box) box.style.display = 'none';
+        reinitialiserFormulaire();
+      })
       .catch(function() { reinitialiserFormulaire(); });
   }
 
@@ -1746,22 +1769,69 @@
   /* ── Chargement initial ─────────────────────────────────────────────── */
   document.getElementById('urlApi').value = localStorage.getItem('ekaye_vente_url_api') || '';
 
+  /* ── Stock de secours : encaisser hors-ligne dès l'ouverture ─────────────
+     Le service worker fait s'ouvrir la page sans réseau, mais le stock, lui, vient
+     de l'Apps Script. Sans filet, une ouverture hors-ligne s'arrêtait sur
+     « Impossible de charger le stock » : le formulaire ne s'affichait jamais, donc
+     aucune vente ne pouvait même entrer dans la file d'attente. On garde donc la
+     dernière réponse connue sur le téléphone.
+     Cette copie peut être périmée — une pièce vendue ailleurs y figure encore.
+     C'est le même pari que decrementerStockLocal : le script tranche au retour du
+     réseau, et une pièce déjà vendue ressort en erreur dans la file (G20). */
+  var CLE_LISTES = 'ekaye_vente_listes';
+
+  function memoriserListes(data) {
+    try {
+      localStorage.setItem(CLE_LISTES, JSON.stringify({ horodatage: Date.now(), listes: data }));
+    } catch (e) { /* quota plein : ce n'est qu'un filet, on continue sans */ }
+  }
+
+  function listesMemorisees() {
+    try {
+      var memo = JSON.parse(localStorage.getItem(CLE_LISTES) || 'null');
+      return (memo && memo.listes && memo.listes.pointsDeVente) ? memo : null;
+    } catch (e) { return null; }
+  }
+
+  function afficherFormulaire(data) {
+    listes = data;
+    document.getElementById('chargement').style.display = 'none';
+    document.getElementById('formulaire').style.display = 'flex';
+    remplirSelectPointDeVente(document.getElementById('pointDeVente'));
+    document.getElementById('date').value = new Date().toISOString().slice(0, 10);
+    rendreChips();
+    ajouterArticle();
+  }
+
+  function annoncerStockDeSecours(horodatage) {
+    var quand = new Date(horodatage).toLocaleString('fr-FR', {
+      weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit'
+    });
+    var box = document.getElementById('secoursBox');
+    box.textContent = 'Hors ligne — stock daté du ' + quand + '.\n' +
+      'La vente sera mise en file d\'attente et partira au retour du réseau.';
+    box.style.display = 'block';
+  }
+
   function chargerListes() {
     appelApi('getListes')
       .then(function(data) {
         if (data && data.erreur) throw new Error(data.erreur);
-        listes = data;
-        document.getElementById('chargement').style.display = 'none';
-        document.getElementById('formulaire').style.display = 'flex';
-        remplirSelectPointDeVente(document.getElementById('pointDeVente'));
-        document.getElementById('date').value = new Date().toISOString().slice(0, 10);
-        rendreChips();
-        ajouterArticle();
+        memoriserListes(data);
+        afficherFormulaire(data);
         // La connexion vient de se confirmer : c'est le bon moment pour vider une
         // éventuelle file de ventes restées en attente depuis la session précédente.
         tenterEnvoiFileAttente();
       })
       .catch(function(erreur) {
+        // Une clé refusée n'est pas une panne de réseau : repartir sur le stock de
+        // secours masquerait le vrai problème, il faut ressaisir la clé.
+        var secours = erreur.authRefusee ? null : listesMemorisees();
+        if (secours) {
+          afficherFormulaire(secours.listes);
+          annoncerStockDeSecours(secours.horodatage);
+          return;
+        }
         document.getElementById('chargement').innerHTML =
           'Impossible de charger le stock.<br>Vérifiez la clé d\'accès, la connexion, ou l\'URL de l\'Apps Script dans le réglage technique.<br><br>' +
           '<small style="color:#a08860">' + (erreur.message || erreur) + '</small>' +
@@ -1778,6 +1848,18 @@
   // de façon fiable sur ce téléphone.
   window.addEventListener('online', tenterEnvoiFileAttente);
   setInterval(tenterEnvoiFileAttente, 120000);
+
+  /* ── Installation hors-ligne ────────────────────────────────────────────
+     updateViaCache: 'none' — sinon le navigateur peut servir sw.js depuis son propre
+     cache HTTP (GitHub Pages annonce max-age=600) et ne jamais voir la nouvelle
+     version. La mise à jour n'est pas appliquée à chaud : recharger la page en pleine
+     vente viderait le panier. Elle prend effet à la prochaine ouverture. */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+        .catch(function(e) { console.warn('Service worker non enregistré :', e); });
+    });
+  }
 
   chargerListes();
 </script>
