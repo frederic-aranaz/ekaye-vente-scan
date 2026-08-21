@@ -11,7 +11,7 @@
    remplacés, et les téléphones qui ont déjà installé la page gardent l'ancienne
    version indéfiniment. C'est la seule ligne à ne jamais oublier de toucher.
    ───────────────────────────────────────────────────────────────────────────── */
-const VERSION = 'v1';
+const VERSION = 'v2';
 const CACHE = 'ekaye-vente-' + VERSION;
 
 /* Tout ce qu'il faut pour qu'un démarrage à froid sans réseau donne une page
