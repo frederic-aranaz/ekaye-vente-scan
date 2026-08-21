@@ -20,9 +20,9 @@
   <meta name="apple-mobile-web-app-title" content="Vente EKAYE">
   <style>
     :root {
-      --ek:       #c9882a;
-      --ek-dark:  #f0b84a;
-      --ek-mid:   #d4963a;
+      --ek:       #86673C;   /* doré officiel EKAYE, Pantone 10349 C — APLATS uniquement */
+      --ek-dark:  #e2a95a;   /* même teinte (35°), éclaircie pour le TEXTE sur fond sombre */
+      --ek-mid:   #a8834d;
       --bg:       #141210;
       --bg-card:  #1e1b17;
       --bg-card2: #252118;
@@ -30,8 +30,8 @@
       --text:     #eeece8;
       --text-2:   #d8c8a8;
       --text-3:   #a08860;
-      --border:   rgba(201,136,42,0.25);
-      --borderdiv:rgba(201,136,42,0.14);
+      --border:   rgba(226,169,90,0.25);
+      --borderdiv:rgba(226,169,90,0.14);
       --shadow:   0 2px 12px rgba(0,0,0,0.4), 0 1px 3px rgba(0,0,0,0.3);
       --r:        12px;
       --font:     'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
@@ -58,15 +58,15 @@
       padding: 0.85rem 1.25rem;
       display: flex; align-items: center; gap: 12px;
       position: sticky; top: 0; z-index: 10;
-      border-bottom: 1px solid rgba(201,136,42,0.25);
+      border-bottom: 1px solid rgba(226,169,90,0.25);
       box-shadow: 0 2px 16px rgba(0,0,0,0.5);
     }
     .topbar-icon {
       width: 36px; height: 36px; border-radius: 6px;
       flex-shrink: 0; font-size: 20px;
       display: flex; align-items: center; justify-content: center;
-      background: rgba(201,136,42,0.15);
-      border: 1px solid rgba(201,136,42,0.3);
+      background: rgba(226,169,90,0.15);
+      border: 1px solid rgba(226,169,90,0.3);
     }
     .topbar h1  { font-size: 15px; font-weight: 600; color: #e8d8b0; margin: 0; letter-spacing: 0.01em; }
     .topbar-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
@@ -85,9 +85,9 @@
     }
     .badge-opt {
       font-size: 10px; color: var(--text-3);
-      background: rgba(201,136,42,0.12);
+      background: rgba(226,169,90,0.12);
       border-radius: 20px; padding: 2px 8px;
-      border: 0.5px solid rgba(201,136,42,0.25);
+      border: 0.5px solid rgba(226,169,90,0.25);
       margin-left: 4px; font-weight: 400; text-transform: none; letter-spacing: 0;
     }
 
@@ -144,7 +144,7 @@
       cursor: pointer;
     }
     .ville-suggestions button:last-child { border-bottom: none; }
-    .ville-suggestions button:active, .ville-suggestions button:hover { background: rgba(201,136,42,0.12); }
+    .ville-suggestions button:active, .ville-suggestions button:hover { background: rgba(226,169,90,0.12); }
 
     /* ── Scan caméra ── */
     .scan-card {
@@ -157,12 +157,12 @@
     .scan-toggle {
       display: flex; align-items: center; justify-content: center; gap: 9px;
       width: 100%; padding: 15px;
-      background: rgba(201,136,42,0.1);
+      background: rgba(226,169,90,0.1);
       border: none; color: var(--ek-dark);
       font-size: 15px; font-weight: 700; cursor: pointer;
       font-family: var(--font); transition: all 0.18s;
     }
-    .scan-toggle:hover { background: rgba(201,136,42,0.18); }
+    .scan-toggle:hover { background: rgba(226,169,90,0.18); }
     .scan-toggle.actif { background: #8b2020; color: #fef8e8; }
     #lecteur { width: 100%; display: none; background: #000; }
     #lecteur.actif { display: block; }
@@ -189,7 +189,7 @@
       overflow: hidden; margin-bottom: 10px;
       box-shadow: var(--shadow);
     }
-    .article-block.scanne { border-color: rgba(201,136,42,0.55); box-shadow: 0 0 0 1px rgba(201,136,42,0.35), var(--shadow); }
+    .article-block.scanne { border-color: rgba(226,169,90,0.55); box-shadow: 0 0 0 1px rgba(226,169,90,0.35), var(--shadow); }
     .article-head {
       display: flex; align-items: center; justify-content: space-between;
       padding: 9px 14px;
@@ -211,13 +211,13 @@
     .add-btn {
       display: flex; align-items: center; justify-content: center; gap: 7px;
       width: 100%; padding: 13px;
-      background: rgba(201,136,42,0.07);
-      border: 1.5px dashed rgba(201,136,42,0.3);
+      background: rgba(226,169,90,0.07);
+      border: 1.5px dashed rgba(226,169,90,0.3);
       border-radius: var(--r); color: var(--ek);
       font-size: 13px; font-weight: 600; cursor: pointer;
       font-family: var(--font); transition: all 0.18s;
     }
-    .add-btn:hover { background: rgba(201,136,42,0.14); border-color: var(--ek); }
+    .add-btn:hover { background: rgba(226,169,90,0.14); border-color: var(--ek); }
 
     /* ── Total bar ── */
     .total-bar {
@@ -225,7 +225,7 @@
       border-radius: var(--r);
       padding: 15px 18px;
       display: flex; align-items: center; justify-content: space-between;
-      border: 1px solid rgba(201,136,42,0.3);
+      border: 1px solid rgba(226,169,90,0.3);
       box-shadow: 0 4px 20px rgba(0,0,0,0.4);
     }
     .t-lbl { font-size: 11px; color: var(--text-3); letter-spacing: 0.05em; }
@@ -243,12 +243,12 @@
       font-family: var(--font); transition: all 0.18s;
     }
     .chip .chip-icon { font-size: 22px; }
-    .chip:hover { background: var(--bg-card2); border-color: rgba(201,136,42,0.3); }
+    .chip:hover { background: var(--bg-card2); border-color: rgba(226,169,90,0.3); }
     .chip.active {
-      background: rgba(201,136,42,0.12);
+      background: rgba(226,169,90,0.12);
       border: 1.5px solid var(--ek);
       color: var(--ek-dark); font-weight: 700;
-      box-shadow: 0 0 12px rgba(201,136,42,0.15);
+      box-shadow: 0 0 12px rgba(226,169,90,0.15);
     }
     .montant-chip {
       background: var(--bg-card);
@@ -280,9 +280,9 @@
       font-size: 11px; color: var(--text-3); margin-top: 7px;
       line-height: 1.55; display: flex; gap: 6px;
       padding: 7px 10px;
-      background: rgba(201,136,42,0.07);
+      background: rgba(226,169,90,0.07);
       border-radius: 8px;
-      border-left: 2px solid rgba(201,136,42,0.3);
+      border-left: 2px solid rgba(226,169,90,0.3);
     }
     .aide-info::before { content: "ⓘ"; color: var(--ek); flex-shrink: 0; }
 
@@ -306,17 +306,18 @@
     .submit {
       width: 100%;
       background: var(--ek);
-      color: #1a1208;
+      color: #ffffff;
       border: none; border-radius: var(--r);
       padding: 15px; font-size: 15px; font-weight: 700;
       cursor: pointer; font-family: var(--font);
       letter-spacing: 0.02em;
-      box-shadow: 0 4px 18px rgba(201,136,42,0.3), 0 1px 4px rgba(0,0,0,0.3);
+      box-shadow: 0 4px 18px rgba(226,169,90,0.3), 0 1px 4px rgba(0,0,0,0.3);
       transition: all 0.2s;
     }
     .submit:not(:disabled):hover {
       background: var(--ek-dark);
-      box-shadow: 0 6px 24px rgba(201,136,42,0.45), 0 2px 6px rgba(0,0,0,0.3);
+      color: #1a1208;
+      box-shadow: 0 6px 24px rgba(226,169,90,0.45), 0 2px 6px rgba(0,0,0,0.3);
       transform: translateY(-1px);
     }
     .submit:not(:disabled):active { transform: translateY(0); }
@@ -332,12 +333,12 @@
     .msg.erreur { background: rgba(160,60,60,0.12); color: #e07070; border: 0.5px solid rgba(160,60,60,0.3); }
     /* La vente est bien enregistrée, mais quelque chose mérite un coup d'oeil :
        ni vert (tout va bien) ni rouge (échec). */
-    .msg.avertissement { background: rgba(201,136,42,0.14); color: #e0a94a; border: 0.5px solid rgba(201,136,42,0.4); }
-    .msg.attente { background: rgba(201,136,42,0.12); color: var(--ek-dark); border: 0.5px solid var(--border); }
+    .msg.avertissement { background: rgba(226,169,90,0.14); color: var(--ek-dark); border: 0.5px solid rgba(226,169,90,0.4); }
+    .msg.attente { background: rgba(226,169,90,0.12); color: var(--ek-dark); border: 0.5px solid var(--border); }
 
     /* ── File d'attente (mode hors-ligne) ── */
     .attente-card {
-      background: rgba(201,136,42,0.08); border: 0.5px solid var(--border);
+      background: rgba(226,169,90,0.08); border: 0.5px solid var(--border);
       border-radius: var(--r); overflow: hidden;
     }
     .attente-titre {
@@ -358,7 +359,7 @@
     }
     .attente-actions { padding: 4px 14px 11px; }
     .attente-actions button {
-      width: 100%; padding: 9px; background: var(--ek); color: #1a1208; border: none;
+      width: 100%; padding: 9px; background: var(--ek); color: #ffffff; border: none;
       border-radius: 8px; font-weight: 700; font-size: 12px; cursor: pointer;
     }
 
@@ -371,7 +372,7 @@
     .config summary { cursor: pointer; color: var(--text-2); }
     .config input { width: 100%; padding: 8px; margin-top: 8px; box-sizing: border-box;
       background: var(--bg-card2); border: 0.5px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--font); }
-    .config button { margin-top: 8px; padding: 7px 14px; background: var(--ek); color: #1a1208; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    .config button { margin-top: 8px; padding: 7px 14px; background: var(--ek); color: #ffffff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
     .chargement { text-align: center; color: var(--text-3); font-size: 13px; padding: 30px 14px; }
   </style>
 </head>
