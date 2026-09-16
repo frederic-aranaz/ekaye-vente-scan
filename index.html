@@ -145,6 +145,15 @@
     }
     .ville-suggestions button:last-child { border-bottom: none; }
     .ville-suggestions button:active, .ville-suggestions button:hover { background: rgba(226,169,90,0.12); }
+    .contact-suggestions .detail {
+      display: block; margin-top: 2px;
+      color: var(--text-3); font-size: 12px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .contact-suggestions .source {
+      padding: 6px 14px; color: var(--text-3); font-size: 11px;
+      border-bottom: 0.5px solid var(--borderdiv);
+    }
 
     /* ── Scan caméra ── */
     .scan-card {
@@ -479,19 +488,22 @@
     <div>
       <div class="sec-title">👤 Informations client <span class="badge-opt">facultatif</span></div>
       <div class="card">
-        <div class="fr">
-          <span class="fi">👤</span>
-          <div class="fb">
-            <div class="fl">Nom</div>
-            <input type="text" id="clientNom" class="fv" placeholder="Dupont">
+        <div style="position:relative">
+          <div class="fr">
+            <span class="fi">👤</span>
+            <div class="fb">
+              <div class="fl">Nom</div>
+              <input type="text" id="clientNom" class="fv" placeholder="Dupont" autocomplete="off">
+            </div>
           </div>
-        </div>
-        <div class="fr">
-          <span class="fi">👤</span>
-          <div class="fb">
-            <div class="fl">Prénom</div>
-            <input type="text" id="clientPrenom" class="fv" placeholder="Marie">
+          <div class="fr">
+            <span class="fi">👤</span>
+            <div class="fb">
+              <div class="fl">Prénom</div>
+              <input type="text" id="clientPrenom" class="fv" placeholder="Marie" autocomplete="off">
+            </div>
           </div>
+          <div id="contactSuggestions" class="ville-suggestions contact-suggestions"></div>
         </div>
         <div class="fr">
           <span class="fi">✉️</span>
@@ -1633,6 +1645,8 @@
     codePostalRecherche = '';
     masquerSuggestionsCommune();
     communeRecherche = '';
+    masquerSuggestionsContact();
+    contactRecherche = '';
     idPanierActuel = null; // vente aboutie (ou formulaire remis à zéro) : prochaine vente, nouvel identifiant
     // Rafraîchit les totaux (nombre de pièces) du sélecteur point de vente
     var pdvSelect = document.getElementById('pointDeVente');
@@ -1758,6 +1772,90 @@
   document.getElementById('clientVille').addEventListener('input', chercherCommunesParNom);
   document.getElementById('clientVille').addEventListener('blur', function() {
     setTimeout(masquerSuggestionsCommune, 150);
+  });
+
+  /* ── Nom / prénom → carnet Google (pré-remplissage) ── */
+  // Dès trois lettres dans Nom ou Prénom, le script cherche dans le carnet et propose au
+  // plus cinq contacts. Rien ne part sans réseau ni sans clé déjà enregistrée : on ne
+  // demande jamais la clé au milieu d'une frappe. Toute panne est muette, la saisie à la
+  // main continue. Même geste que la page « Découverte EKAYE » (16/09/2026).
+  var contactRecherche = '';
+  var contactRechercheTimer = null;
+  var contactsProposes = [];
+
+  function masquerSuggestionsContact() {
+    var box = document.getElementById('contactSuggestions');
+    box.classList.remove('visible');
+    box.innerHTML = '';
+    contactsProposes = [];
+  }
+
+  // Un nom de contact finit dans du HTML : il ne doit jamais pouvoir y injecter de balise.
+  function echapperHtml(texte) {
+    return String(texte).replace(/[&<>"']/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function chercherContactsCarnet(e) {
+    var champ = e.target;
+    var requete = champ.value.trim();
+    clearTimeout(contactRechercheTimer);
+    if (requete.length < 3) {
+      masquerSuggestionsContact();
+      contactRecherche = '';
+      return;
+    }
+    if (!navigator.onLine || !localStorage.getItem('ekaye_vente_cle')) return;
+
+    contactRechercheTimer = setTimeout(function() {
+      if (requete === contactRecherche) return;
+      contactRecherche = requete;
+      appelApi('chercherContacts', { requete: requete })
+        .then(function(reponse) {
+          // La saisie a continué pendant l'appel : cette réponse est obsolète.
+          if (champ.value.trim() !== requete) return;
+          var contacts = (reponse && reponse.contacts) || [];
+          if (contacts.length === 0) { masquerSuggestionsContact(); return; }
+          contactsProposes = contacts;
+          var box = document.getElementById('contactSuggestions');
+          box.innerHTML = '<div class="source">Dans le carnet Google</div>' +
+            contacts.map(function(c, i) {
+              var nomAffiche = [c.prenom, c.nom].filter(Boolean).join(' ') || c.email;
+              var detail = [c.telephone, c.email, c.ville].filter(Boolean).join(' · ');
+              return '<button type="button" onclick="choisirContact(' + i + ')">' +
+                echapperHtml(nomAffiche) +
+                (detail ? '<span class="detail">' + echapperHtml(detail) + '</span>' : '') +
+                '</button>';
+            }).join('');
+          box.classList.add('visible');
+        })
+        .catch(function() { /* hors ligne, clé refusée, quota : saisie manuelle */ });
+    }, 400);
+  }
+
+  // Nom et prénom prennent ceux du contact : ce qu'on y tapait servait à le chercher.
+  // Tout le reste n'est rempli que s'il est vide — jamais par-dessus une saisie.
+  function choisirContact(i) {
+    var c = contactsProposes[i];
+    if (!c) return;
+    if (c.nom) document.getElementById('clientNom').value = c.nom;
+    if (c.prenom) document.getElementById('clientPrenom').value = c.prenom;
+    [['email', 'clientEmail'], ['telephone', 'clientTelephone'], ['adresse', 'clientAdresse'],
+     ['codePostal', 'clientCodePostal'], ['ville', 'clientVille'], ['pays', 'clientPays']]
+      .forEach(function(paire) {
+        var champ = document.getElementById(paire[1]);
+        if (c[paire[0]] && !champ.value.trim()) champ.value = c[paire[0]];
+      });
+    masquerSuggestionsContact();
+  }
+
+  ['clientNom', 'clientPrenom'].forEach(function(id) {
+    var champ = document.getElementById(id);
+    champ.addEventListener('input', chercherContactsCarnet);
+    champ.addEventListener('blur', function() {
+      setTimeout(masquerSuggestionsContact, 150); // laisse le clic sur une suggestion aboutir
+    });
   });
 
   // Auto-sélection du contenu au focus sur les champs numériques
