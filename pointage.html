@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Pointage d'inventaire EKAYE</title>
+  <!-- Pourquoi cette page vit ICI et non plus seulement en `?pointage` sur Apps
+       Script : l'iframe d'Apps Script refuse la caméra (getUserMedia), comme elle
+       l'a refusée à la page de vente. Même lecteur que la page de vente, servi
+       depuis ce dépôt pour marcher hors-ligne (voir index.html). -->
+  <script src="html5-qrcode.min.js"></script>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#141210">
+  <link rel="icon" href="icone-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icone-192.png">
+  <style>
+    :root {
+      /* Doré officiel EKAYE (#86673C) pour les APLATS, sa version éclaircie pour
+         le TEXTE sur fond sombre — même partage que la page de vente. */
+      --ek: #86673C; --ek-clair: #e2a95a; --bg: #141210; --bg-card: #1e1b17;
+      --bg-card2: #252118; --text: #eeece8; --text-2: #d8c8a8; --text-3: #a08860;
+      --border: rgba(226,169,90,0.25);
+      --vert: #7fb069; --orange: #e0a05a; --rouge: #e0836f;
+      --font: 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font); background: var(--bg); color: var(--text);
+      padding: 16px; max-width: 760px; margin: 0 auto;
+      /* Le pied d'écran est fixé au bas de la fenêtre : sans cette réserve, il
+         recouvre les dernières pièces de la liste — celles qu'on cherche
+         justement le plus longtemps. */
+      padding-bottom: 96px;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    h1 { font-size: 18px; color: #e8d8b0; margin-bottom: 4px; }
+    .sub { font-size: 12px; color: var(--text-3); margin-bottom: 16px; line-height: 1.6; }
+    .sub strong { color: var(--text-2); }
+    h2.section { font-size: 11px; color: var(--text-3); text-transform: uppercase;
+      letter-spacing: 0.5px; margin: 18px 0 8px; }
+
+    .aide { font-size: 12px; color: var(--text-3); background: rgba(226,169,90,0.07);
+      border-left: 2px solid var(--border); border-radius: 8px; padding: 10px 12px;
+      margin-bottom: 8px; line-height: 1.6; }
+    .aide strong { color: var(--text-2); }
+
+    .anomalie { font-size: 12px; color: var(--orange); background: rgba(224,160,90,0.08);
+      border-left: 2px solid rgba(224,160,90,0.5); border-radius: 8px; padding: 10px 12px;
+      margin-bottom: 16px; line-height: 1.6; }
+
+    .chargement { color: var(--text-3); font-size: 13px; padding: 30px 0; text-align: center; }
+    .vide-msg { color: var(--text-3); font-size: 13px; padding: 24px 0; text-align: center; }
+
+    /* ── Boutons ───────────────────────────────────────────────────────────
+       46 px de haut au minimum partout : en dessous, un doigt rate sa cible.
+       Cette page est faite pour être utilisée debout, l'autre main occupée
+       par une lampe. */
+    .btn {
+      min-height: 46px; padding: 12px 16px; background: var(--ek); color: #ffffff;
+      border: none; border-radius: 10px; cursor: pointer; font-weight: 700;
+      font-size: 14px; font-family: var(--font);
+    }
+    .btn.sec { background: var(--bg-card2); color: var(--text-2); border: 0.5px solid var(--border); }
+    .btn:disabled { opacity: 0.45; cursor: default; }
+    .btn.large { flex: 1; width: 100%; }
+
+    /* ── Écran 1 : le choix ────────────────────────────────────────────────
+       Des pastilles, pas des menus déroulants : un <select> sur téléphone ouvre
+       une roulette qui masque l'écran, et il faut deux gestes pour vérifier ce
+       qu'on a choisi. Ici tout se lit d'un coup d'œil, sans rien ouvrir. */
+    .choix { display: flex; flex-wrap: wrap; gap: 8px; }
+    .pastille-choix {
+      min-height: 46px; padding: 10px 14px; border-radius: 10px; cursor: pointer;
+      background: var(--bg-card); border: 1px solid var(--border); color: var(--text-2);
+      font-size: 14px; font-family: var(--font); display: inline-flex;
+      align-items: center; gap: 8px; text-align: left;
+    }
+    .pastille-choix .puce { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+    .pastille-choix .compte { font-size: 11px; color: var(--text-3); }
+    .pastille-choix.actif { background: rgba(226,169,90,0.18); border-color: var(--ek);
+      color: var(--ek-clair); font-weight: 600; }
+    .pastille-choix.actif .compte { color: var(--ek-clair); }
+    .pastille-choix.vide { opacity: 0.45; }
+    .pastille-choix .mention { font-size: 10px; font-style: italic; color: var(--text-3); }
+
+    .reprise { margin-top: 16px; padding: 12px 14px; border-radius: 10px;
+      background: rgba(127,176,105,0.08); border: 1px solid rgba(127,176,105,0.35);
+      font-size: 12px; color: var(--text-2); line-height: 1.6; }
+    .reprise strong { color: #b9d8a8; }
+    .reprise .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+    /* ── Écran 2 : la barre de progression ─────────────────────────────────
+       Collée en haut : pendant le pointage on fait défiler beaucoup, et savoir
+       où on en est ne doit jamais obliger à remonter. */
+    .barre {
+      position: sticky; top: 0; z-index: 20; background: var(--bg);
+      padding: 10px 0 12px; margin-bottom: 14px; border-bottom: 1px solid var(--border);
+    }
+    .barre .ligne1 { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+    .barre .titre { font-size: 15px; font-weight: 700; color: #e8d8b0; flex: 1;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .retour { background: none; border: none; color: var(--text-3); font-size: 20px;
+      cursor: pointer; padding: 6px 10px 6px 0; line-height: 1; font-family: var(--font); }
+    .jauge { height: 8px; border-radius: 4px; background: var(--bg-card2); overflow: hidden; }
+    .jauge > i { display: block; height: 100%; width: 0; background: var(--vert);
+      transition: width .2s; }
+    .compteur-texte { font-size: 12px; color: var(--text-3); margin-top: 6px;
+      display: flex; justify-content: space-between; gap: 10px; }
+    .compteur-texte b { color: var(--ek-clair); font-size: 14px; }
+
+    .recherche {
+      flex: 1; min-width: 0; padding: 11px 12px; background: var(--bg-card2);
+      border: 0.5px solid var(--border); border-radius: 10px; color: var(--text);
+      font-family: var(--font); font-size: 14px;
+    }
+    .outils { display: flex; gap: 8px; margin-top: 10px; }
+
+    /* ── Scan ──────────────────────────────────────────────────────────────
+       La caméra vit DANS la barre collée en haut : on scanne en tenant le
+       téléphone, la liste défile dessous. Image basse (format 2:1) : plus haute, elle
+       mangerait l'écran et on ne verrait plus la pièce qu'on vient de pointer.
+       (Hauteur obtenue par le format demandé à la caméra, pas par le CSS.) */
+    .btn-scan {
+      flex: none; min-height: 46px; padding: 0 14px; border-radius: 10px; cursor: pointer;
+      background: rgba(226,169,90,0.12); border: 1px solid var(--border); color: var(--ek-clair);
+      font-weight: 700; font-size: 14px; font-family: var(--font); white-space: nowrap;
+    }
+    .btn-scan.actif { background: #8b2020; border-color: #8b2020; color: #fef8e8; }
+    #lecteur { display: none; margin-top: 10px; border-radius: 10px; overflow: hidden;
+      background: #000; }
+    #lecteur.actif { display: block; }
+    /* JAMAIS de hauteur imposée à la vidéo : la bibliothèque convertit la zone
+       de visée avec deux rapports indépendants (largeur vidéo / largeur affichée,
+       hauteur vidéo / hauteur affichée). Une image écrasée par le CSS lui ferait
+       décoder un QR déformé. La hauteur basse s'obtient en DEMANDANT un format
+       large à la caméra (voir `aspectRatio` dans demarrerScan). */
+    #lecteur video { display: block; width: 100% !important; height: auto !important; }
+
+    .retour-scan { display: none; margin-top: 8px; padding: 10px 12px; border-radius: 10px;
+      font-size: 13px; line-height: 1.45; }
+    .retour-scan.visible { display: block; }
+    .retour-scan.ok { color: #b9d8a8; background: rgba(127,176,105,0.12);
+      border: 1px solid rgba(127,176,105,0.4); }
+    .retour-scan.info { color: var(--text-2); background: var(--bg-card2); border: 1px solid var(--border); }
+    .retour-scan.alerte { color: var(--orange); background: rgba(224,160,90,0.12);
+      border: 1px solid rgba(224,160,90,0.5); }
+    .retour-scan.err { color: var(--rouge); background: rgba(224,131,111,0.12);
+      border: 1px solid rgba(224,131,111,0.45); }
+
+    /* La pièce qu'on vient de scanner s'allume un instant : elle est déjà partie
+       en bas de sa famille, l'éclair dit laquelle a bougé. */
+    @keyframes eclair { from { box-shadow: 0 0 0 3px var(--vert); } to { box-shadow: 0 0 0 0 transparent; } }
+    .piece.eclair { animation: eclair 1.6s ease-out; }
+    .piece.cible { box-shadow: 0 0 0 2px var(--ek-clair); }
+
+    /* ── La liste ──────────────────────────────────────────────────────────
+       Un conteneur en colonne flex par famille : c'est lui qui fait descendre
+       les pièces pointées en bas SANS toucher au DOM (voir .faite). Réordonner
+       en JavaScript aurait perdu la position de défilement à chaque coche —
+       autrement dit fait sauter la liste sous le doigt. */
+    .famille { margin-bottom: 24px; }
+    .famille > h3 {
+      font-size: 12px; color: var(--text-2); font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.4px; margin-bottom: 8px; display: flex; gap: 8px;
+      align-items: baseline; flex-wrap: wrap;
+    }
+    .famille > h3 span { color: var(--text-3); font-weight: 400; text-transform: none;
+      letter-spacing: 0; font-size: 11px; }
+    .cartes { display: flex; flex-direction: column; gap: 8px; }
+
+    .piece {
+      order: 0; background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden; transition: opacity .15s, border-color .15s;
+    }
+    .piece .haut { display: flex; align-items: stretch; }
+
+    /* La ligne ENTIÈRE pointe la pièce : viser une case de 20 px avec un doigt,
+       debout devant une étagère, c'est la rater une fois sur trois. */
+    .tap {
+      flex: 1; display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+      cursor: pointer; background: none; border: none; text-align: left;
+      color: var(--text); font-family: var(--font); min-height: 60px;
+    }
+    .coche {
+      flex: none; width: 26px; height: 26px; border-radius: 8px;
+      border: 2px solid var(--text-3); display: flex; align-items: center;
+      justify-content: center; font-size: 15px; font-weight: 700; line-height: 1;
+    }
+    .ident { flex: 1; min-width: 0; }
+    .nom { display: block; font-size: 14px; font-weight: 600; color: var(--text);
+      line-height: 1.35; overflow-wrap: anywhere; }
+    .meta { display: block; font-size: 11px; color: var(--text-3); margin-top: 3px; }
+    .prix { font-size: 14px; font-weight: 700; color: var(--ek-clair); flex: none;
+      white-space: nowrap; align-self: center; }
+
+    /* Le détail a son PROPRE bouton : la ligne servant à pointer, ouvrir la
+       fiche au même geste rendrait l'un des deux impossible. */
+    .btn-fiche {
+      flex: none; width: 48px; border: none; border-left: 1px solid var(--border);
+      background: var(--bg-card2); color: var(--text-3); font-size: 15px;
+      font-style: italic; font-weight: 700; cursor: pointer; font-family: var(--font);
+    }
+    .fiche { border-top: 1px solid var(--border); padding: 12px 14px; background: var(--bg-card2); }
+    .fiche dl { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; font-size: 12px; }
+    .fiche dt { color: var(--text-3); text-transform: uppercase; font-size: 10px;
+      letter-spacing: 0.3px; align-self: center; }
+    .fiche dd { color: var(--text-2); overflow-wrap: anywhere; }
+    .fiche dd.vide { color: rgba(160,136,96,0.5); }
+
+    /* Pointée : grisée, barrée, et descendue en bas de sa famille. */
+    .piece.faite { order: 1; opacity: 0.45; border-color: rgba(127,176,105,0.35); }
+    .piece.faite .coche { background: var(--vert); border-color: var(--vert); color: #14210e; }
+    .piece.faite .coche::before { content: '\2713'; }
+    .piece.faite .nom { text-decoration: line-through; text-decoration-color: var(--text-3); }
+    .piece.faite .prix { color: var(--text-3); }
+
+    /* Compteur des familles en série : une ligne n'y est pas une pièce mais un
+       modèle en N exemplaires. Une case à cocher répondrait « oui » à la
+       question « les as-tu tous vus ? » sans qu'on les ait comptés. */
+    .compteur { display: flex; align-items: center; gap: 8px; padding: 0 14px 12px; }
+    .compteur button {
+      width: 46px; height: 46px; border-radius: 10px; background: var(--bg-card2);
+      border: 1px solid var(--border); color: var(--text-2); font-size: 20px;
+      cursor: pointer; font-family: var(--font); line-height: 1;
+    }
+    .compteur button.tout { width: auto; padding: 0 14px; font-size: 12px; font-weight: 700; }
+    .compteur button:disabled { opacity: 0.3; cursor: default; }
+    .compteur .score { flex: 1; text-align: center; font-size: 14px; color: var(--text-3); }
+    .compteur .score b { font-size: 20px; color: var(--ek-clair); }
+    .piece.faite .compteur .score b { color: var(--vert); }
+    .piece.ecart-plus { border-color: rgba(224,160,90,0.55); opacity: 1; }
+    .piece.ecart-plus .compteur .score b { color: var(--orange); }
+
+    /* ── Pied fixe ─────────────────────────────────────────────────────────── */
+    .pied {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+      background: rgba(20,18,16,0.97); border-top: 1px solid var(--border);
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    }
+    .pied-centre { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; }
+
+    /* ── Écran 3 : le bilan ────────────────────────────────────────────────── */
+    .bilan-blocs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+    .bilan-blocs .bloc { flex: 1 1 110px; background: var(--bg-card);
+      border: 0.5px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+    .bilan-blocs .val { font-size: 19px; font-weight: 700; color: var(--ek-clair); }
+    .bilan-blocs .val.ok { color: var(--vert); }
+    .bilan-blocs .val.alerte { color: var(--orange); }
+    .bilan-blocs .lib { font-size: 10px; color: var(--text-3); text-transform: uppercase;
+      letter-spacing: 0.4px; margin-top: 3px; }
+
+    .bilan-liste { background: var(--bg-card); border: 0.5px solid var(--border);
+      border-radius: 10px; padding: 2px 0; margin-bottom: 8px; }
+    .bilan-liste .item { padding: 10px 14px; font-size: 13px; color: var(--text-2);
+      border-bottom: 0.5px solid rgba(226,169,90,0.10); display: flex;
+      justify-content: space-between; gap: 12px; }
+    .bilan-liste .item:last-child { border-bottom: none; }
+    .bilan-liste .item .droite { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+    .bilan-liste .item.plus .droite { color: var(--orange); }
+
+    /* Panneau de suite, après un enregistrement : c'est lui qui enchaîne sur la
+       famille d'après. Sans lui, la page laissait le pointage terminé sur son
+       bilan sans jamais dire ce qu'on pouvait faire ensuite. */
+    .suite { background: rgba(226,169,90,0.09); border: 1px solid var(--border);
+      border-radius: 12px; padding: 14px; margin-bottom: 18px; }
+    .suite .titre-suite { font-size: 13px; font-weight: 700; color: #e8d8b0; margin-bottom: 3px; }
+    .suite .sous-suite { font-size: 12px; color: var(--text-3); margin-bottom: 12px; line-height: 1.5; }
+    .suite .choix { margin-bottom: 12px; }
+    .suite .choix:last-child { margin-bottom: 0; }
+    .pastille-choix.fait { border-color: rgba(127,176,105,0.45); }
+    .pastille-choix .coche-famille { color: var(--vert); font-weight: 700; flex: none; }
+
+    .etat { font-size: 13px; line-height: 1.6; padding: 12px 14px; border-radius: 10px;
+      margin-bottom: 16px; }
+    .etat.ok { background: rgba(127,176,105,0.10); border: 1px solid rgba(127,176,105,0.4);
+      color: #b9d8a8; }
+    .etat.ko { background: rgba(224,131,111,0.10); border: 1px solid rgba(224,131,111,0.4);
+      color: var(--rouge); }
+    .etat.attente { background: var(--bg-card2); border: 1px solid var(--border); color: var(--text-3); }
+
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <h1>Pointage d'inventaire</h1>
+  <p class="sub" id="introduction">Scannez l'étiquette de chaque pièce, ou touchez sa ligne. <span id="genere"></span></p>
+
+  <div class="anomalie" id="anomalie" hidden></div>
+  <div class="chargement" id="chargement">Chargement du stock…</div>
+
+  <!-- ── Écran 1 : le choix ─────────────────────────────────────────────── -->
+  <section id="ecranChoix" hidden>
+    <div class="aide">
+      L'<strong>Inventaire par dépôt</strong> dit ce qui <strong>devrait</strong> être là.
+      Cette page-ci sert à vérifier ce qui y est <strong>vraiment</strong> : choisissez un
+      dépôt, puis <strong>scannez l'étiquette</strong> de chaque pièce à mesure que vous la
+      trouvez — ou touchez sa ligne si l'étiquette manque. Ce qui reste en haut de la liste à
+      la fin, c'est ce qui manque. Le scan signale aussi ce qui ne devrait pas être là :
+      une pièce vendue, ou attendue dans un autre dépôt.
+      <br>Le stock n'est jamais modifié. Le pointage se garde dans le téléphone : vous pouvez
+      être interrompu et reprendre plus tard, même sans réseau.
+    </div>
+
+    <h2 class="section">Quel dépôt ?</h2>
+    <div class="choix" id="choixDepot"></div>
+
+    <h2 class="section">Quelle famille ?</h2>
+    <div class="choix" id="choixFamille"></div>
+
+    <div class="reprise" id="reprise" hidden></div>
+
+    <p style="margin-top:20px">
+      <button class="btn large" id="btnDemarrer" disabled>Choisissez un dépôt</button>
+    </p>
+  </section>
+
+  <!-- ── Écran 2 : le pointage ──────────────────────────────────────────── -->
+  <section id="ecranPointage" hidden>
+    <div class="barre">
+      <div class="ligne1">
+        <button class="retour" id="btnRetour" type="button" aria-label="Revenir au choix">&larr;</button>
+        <span class="titre" id="titrePointage"></span>
+      </div>
+      <div class="jauge"><i id="jauge"></i></div>
+      <div class="compteur-texte">
+        <span id="compteVues"></span>
+        <span id="compteReste"></span>
+      </div>
+      <div class="outils">
+        <button class="btn-scan" id="btnScan" type="button">📷 Scanner</button>
+        <input class="recherche" id="recherche" type="search" placeholder="Filtrer : n°, couleur…">
+      </div>
+      <div id="lecteur"></div>
+      <div class="retour-scan" id="retourScan" role="status" aria-live="polite"></div>
+    </div>
+
+    <div id="liste"></div>
+
+    <div class="pied">
+      <div class="pied-centre">
+        <button class="btn large" id="btnCloturer" type="button">Terminer le pointage</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Écran 3 : le bilan ─────────────────────────────────────────────── -->
+  <section id="ecranBilan" hidden>
+    <div class="barre">
+      <div class="ligne1">
+        <button class="retour" id="btnRetourPointage" type="button" aria-label="Revenir en arrière">&larr;</button>
+        <span class="titre" id="titreBilan"></span>
+      </div>
+    </div>
+
+    <div class="bilan-blocs" id="bilanBlocs"></div>
+    <div class="etat" id="bilanEtat" hidden></div>
+    <div id="bilanSuite" hidden></div>
+    <div id="bilanDetail"></div>
+
+    <div class="pied">
+      <div class="pied-centre">
+        <button class="btn sec" id="btnReprendre" type="button">Reprendre</button>
+        <button class="btn large" id="btnEnregistrer" type="button">Enregistrer dans le classeur</button>
+      </div>
+    </div>
+  </section>
+
+<script>
+  var TYPE_SERIE = 'Série';
+
+  var donnees = null;
+
+  /* Choix courant. `famille` vide = toutes les familles du dépôt. */
+  var choix = { depot: '', famille: '' };
+
+  /* Pointage courant : { debut, cumul, repriseA, vues: { ref: nombre } }. */
+  var courant = null;
+
+  /* ── Clé d'accès et adresse de l'API ─────────────────────────────────────
+     Mêmes noms de stockage que la page de vente, et cette fois le stockage EST
+     partagé : les deux pages sont sur le même domaine. Une clé saisie pour
+     vendre sert donc aussi à pointer, et inversement. */
+  var CLE_STOCKAGE = 'ekaye_vente_cle';
+  var URL_API_STOCKAGE = 'ekaye_vente_url_api';
+  var URL_API_DEFAUT = 'https://script.google.com/macros/s/AKfycbwl4wyUyxOyrWVtXVvjoS-7LMqAULNaNBCAUdBZxRYTlFF3OVkjE0mWifOiG6oqK_h5Xg/exec';
+
+  /* Le dernier stock reçu, gardé pour ouvrir la page sans réseau : une boutique
+     mal couverte ne doit pas empêcher de COMMENCER un pointage. Il est daté à
+     l'écran (« stock au … »), puisqu'il peut avoir vieilli. */
+  var DONNEES_STOCKAGE = 'ekaye_pointage_donnees_v1';
+
+  /* Même délai que la page de vente : la caméra lit en continu, une étiquette
+     restée dans le champ serait relue dix fois par seconde. */
+  var ANTI_DOUBLON_MS = 2500;
+
+  /* Les pointages en cours, par dépôt et famille. Ils vivent dans le téléphone
+     et NON sur le serveur : dans une boutique mal couverte, une écriture par
+     coche ferait attendre le doigt à chaque pièce. Le classeur n'est écrit
+     qu'une fois, à la clôture. */
+  var POINTAGES_STOCKAGE = 'ekaye_pointages_v1';
+
+  /* Ce qui a DÉJÀ été clôturé et enregistré. Séparé des pointages en cours : un
+     pointage clos n'a plus de coches à reprendre, mais il faut se souvenir qu'il
+     a eu lieu — sans quoi la page reproposerait la famille qu'on vient de finir,
+     et rien ne dirait ce qu'il reste à faire dans le dépôt. */
+  var CLOS_STOCKAGE = 'ekaye_pointages_clos_v1';
+
+  /* Au-delà, un pointage n'est plus « celui d'aujourd'hui » : le stock a bougé,
+     le reproposer est la bonne réponse. */
+  var CLOS_VALIDITE_MS = 12 * 60 * 60 * 1000;
+
+  /* Au-delà de ce silence entre deux gestes, on ne pointe plus : on a posé le
+     téléphone. Compter ce temps ferait sortir « 14 h » d'un pointage repris le
+     lendemain, et la colonne Durée ne voudrait plus rien dire. */
+  var PAUSE_MAX_MS = 15 * 60 * 1000;
+
+  function cleAcces(redemander) {
+    var cle = null;
+    try { cle = redemander ? null : localStorage.getItem(CLE_STOCKAGE); } catch (e) {}
+    if (!cle) {
+      cle = (window.prompt("Clé d'accès au registre EKAYE :") || '').trim();
+      if (!cle) return null;
+      try { localStorage.setItem(CLE_STOCKAGE, cle); } catch (e) {}
+    }
+    return cle;
+  }
+
+  function oublierCle() {
+    try { localStorage.removeItem(CLE_STOCKAGE); } catch (e) {}
+  }
+
+  function urlApi() {
+    var url = null;
+    try { url = localStorage.getItem(URL_API_STOCKAGE); } catch (e) {}
+    return url || URL_API_DEFAUT;
+  }
+
+  /* Tous les appels passent par ici, comme sur la page de vente : POST, clé dans
+     le corps — jamais dans l'URL, qui finirait dans l'historique et les journaux
+     de Google. Le type text/plain évite la requête préalable CORS, qu'Apps
+     Script ne sait pas servir.
+     Rejette une erreur marquée `.authRefusee` quand la clé est refusée, pour que
+     l'appelant la redemande au lieu de l'afficher comme une panne. */
+  function appelApi(action, cle, data) {
+    return fetch(urlApi(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: action, cle: cle, data: data })
+    })
+    /* Lue en texte d'abord : quand Apps Script attend une ré-autorisation, il
+       répond par une page HTML, et « Unexpected token '<' » n'aide personne
+       devant une étagère. */
+    .then(function(r) {
+      return r.text().then(function(texte) {
+        try { return JSON.parse(texte); } catch (e) {
+          throw new Error('réponse illisible du serveur (HTTP ' + r.status + ')');
+        }
+      });
+    })
+    .then(function(reponse) {
+      if (reponse && reponse.authRefusee) {
+        oublierCle();
+        var refus = new Error("Clé d'accès refusée.");
+        refus.authRefusee = true;
+        throw refus;
+      }
+      if (reponse && reponse.erreur) throw new Error(reponse.erreur);
+      return reponse;
+    });
+  }
+
+  function lireDonneesSecours() {
+    try {
+      var brut = localStorage.getItem(DONNEES_STOCKAGE);
+      return brut ? JSON.parse(brut) : null;
+    } catch (e) { return null; }
+  }
+
+  /* ── Chargement ──────────────────────────────────────────────────────────
+     `redemander` : après un refus, on repose la question une fois plutôt que
+     d'afficher une erreur sur une clé simplement mal tapée. */
+  function charger(redemander) {
+    var chargement = document.getElementById('chargement');
+    chargement.hidden = false;
+    chargement.textContent = 'Chargement du stock…';
+
+    var cle = cleAcces(redemander);
+    if (!cle) {
+      chargement.textContent = "Clé d'accès requise pour afficher le stock.";
+      return;
+    }
+
+    appelApi('getPointage', cle)
+      .then(function(data) {
+        try { localStorage.setItem(DONNEES_STOCKAGE, JSON.stringify(data)); } catch (e) {}
+        recevoir(data, false);
+      })
+      .catch(function(err) {
+        if (err && err.authRefusee) {
+          if (!redemander) { charger(true); return; }
+          chargement.textContent = "Clé d'accès refusée.";
+          return;
+        }
+        /* Panne réseau : on repart du dernier stock reçu s'il existe. Mieux vaut
+           pointer sur un stock d'hier, annoncé comme tel, que ne rien pouvoir
+           faire devant l'étagère. */
+        var secours = lireDonneesSecours();
+        if (secours) { recevoir(secours, true); return; }
+        chargement.textContent = 'Erreur de chargement : ' + ((err && err.message) || err)
+          + ' — et aucun stock gardé dans ce téléphone.';
+      });
+  }
+
+  function recevoir(data, horsLigne) {
+    donnees = data || {};
+    donnees.depots = donnees.depots || [];
+    donnees.lignes = donnees.lignes || [];
+    donnees.familles = donnees.familles || [];
+    donnees.colonnesParFamille = donnees.colonnesParFamille || {};
+    donnees.vendues = donnees.vendues || [];
+    document.getElementById('genere').textContent =
+      (donnees.genereLe ? 'Stock au ' + donnees.genereLe + '.' : '')
+      + (horsLigne ? ' Hors ligne : dernier stock reçu par ce téléphone.' : '');
+    signalerAnomalies();
+    rendreChoix();
+    document.getElementById('chargement').hidden = true;
+    document.getElementById('ecranChoix').hidden = false;
+  }
+
+  /* Mêmes anomalies que sur l'inventaire, et pour la même raison : une ligne
+     d'en-têtes recopiée dans une feuille de stock est écartée du comptage, mais
+     annoncée — c'est le classeur qu'il faut corriger, pas la page. Ici elle
+     compte double : elle fausserait le nombre de pièces à trouver. */
+  function signalerAnomalies() {
+    var messages = [];
+    var doubles = (donnees && donnees.enTetesEnDouble) || [];
+    var colonnes = (donnees && donnees.colonnesEnDouble) || [];
+
+    if (doubles.length) {
+      messages.push('⚠ ' + doubles.length + ' ligne' + (doubles.length > 1 ? 's' : '')
+        + ' recopiant les en-têtes ' + (doubles.length > 1 ? 'ont' : 'a')
+        + ' été <strong>écartée' + (doubles.length > 1 ? 's' : '') + '</strong> du comptage : '
+        + doubles.map(function(d) { return echapper(d.famille) + ', ligne ' + d.ligne; }).join(' · ')
+        + '. À supprimer dans le classeur.');
+    }
+    if (colonnes.length) {
+      messages.push('⚠ ' + colonnes.length + ' colonne'
+        + (colonnes.length > 1 ? 's portent' : ' porte')
+        + ' un en-tête déjà utilisé dans sa feuille : '
+        + colonnes.map(function(c) { return echapper(c.famille) + ' → ' + echapper(c.colonne); }).join(' · ')
+        + '.');
+    }
+
+    var el = document.getElementById('anomalie');
+    if (!messages.length) { el.hidden = true; return; }
+    el.innerHTML = messages.join('<br>');
+    el.hidden = false;
+  }
+
+  /* ── Écran 1 : le choix ──────────────────────────────────────────────── */
+
+  /* Un dépôt du catalogue sans aucune pièce reste affiché, grisé : savoir qu'il
+     n'y a rien chez LAM est une information, et une pastille absente se lit
+     comme un oubli de la page. */
+  function rendreChoix() {
+    var depots = (donnees.depotsConnus || []).slice();
+    (donnees.depots || []).forEach(function(d) { if (depots.indexOf(d) === -1) depots.push(d); });
+
+    document.getElementById('choixDepot').innerHTML = depots.map(function(d) {
+      var n = compterPieces(lignesDe(d, ''));
+      return '<button type="button" class="pastille-choix' + (n ? '' : ' vide')
+        + (choix.depot === d ? ' actif' : '') + '" data-depot="' + echapper(d) + '">'
+        + '<span class="puce" style="background:' + echapper(couleurDepot(d)) + '"></span>'
+        + echapper(d) + mentionDepot(d)
+        + '<span class="compte">' + n + '</span></button>';
+    }).join('');
+
+    rendreChoixFamille();
+    majBoutonDemarrer();
+    rendreReprise();
+  }
+
+  function rendreChoixFamille() {
+    var el = document.getElementById('choixFamille');
+    if (!choix.depot) {
+      el.innerHTML = '<span class="sub" style="margin:0">Choisissez d\'abord un dépôt.</span>';
+      return;
+    }
+
+    var familles = (donnees.familles || []).filter(function(f) {
+      return lignesDe(choix.depot, f).length > 0;
+    });
+
+    var toutes = '<button type="button" class="pastille-choix'
+      + (choix.famille === '' ? ' actif' : '') + '" data-famille="">Toutes'
+      + '<span class="compte">' + compterPieces(lignesDe(choix.depot, '')) + '</span></button>';
+
+    /* Une famille déjà clôturée aujourd'hui porte une coche : c'est ce qui permet
+       de voir d'un coup d'œil ce qu'il reste à parcourir dans le dépôt, sans se
+       souvenir de ce qu'on a fait il y a vingt minutes. Elle reste choisissable —
+       on peut vouloir la repointer. */
+    el.innerHTML = toutes + familles.map(function(f) {
+      var clos = closPour(choix.depot, f);
+      return '<button type="button" class="pastille-choix' + (choix.famille === f ? ' actif' : '')
+        + (clos ? ' fait' : '') + '" data-famille="' + echapper(f) + '">'
+        + (clos ? '<span class="coche-famille" aria-label="déjà pointée">✓</span>' : '')
+        + echapper(f)
+        + '<span class="compte">' + compterPieces(lignesDe(choix.depot, f)) + '</span></button>';
+    }).join('');
+  }
+
+  function majBoutonDemarrer() {
+    var btn = document.getElementById('btnDemarrer');
+    var n = choix.depot ? compterPieces(lignesDe(choix.depot, choix.famille)) : 0;
+
+    if (!choix.depot) { btn.disabled = true; btn.textContent = 'Choisissez un dépôt'; return; }
+    if (!n) { btn.disabled = true; btn.textContent = 'Aucune pièce à pointer ici'; return; }
+
+    btn.disabled = false;
+    btn.textContent = (lirePointage(cleCourante()) ? 'Reprendre le pointage — ' : 'Commencer — ')
+      + n + (n > 1 ? ' pièces' : ' pièce');
+  }
+
+  /* Un pointage laissé en plan se retrouve tout seul : sans ce rappel il faut
+     se souvenir du dépôt exact pour retomber dessus, et un pointage oublié à
+     moitié fait est pire qu'un pointage jamais commencé. */
+  function rendreReprise() {
+    var el = document.getElementById('reprise');
+    var tous = lireTousPointages();
+    var cles = Object.keys(tous);
+    if (!cles.length) { el.hidden = true; return; }
+
+    el.innerHTML = '<strong>Pointage' + (cles.length > 1 ? 's' : '') + ' en cours</strong><br>'
+      + cles.map(function(c) {
+          var p = tous[c];
+          var vues = Object.keys(p.vues || {}).length;
+          return echapper(libelleCle(c)) + ' — ' + vues + ' ligne' + (vues > 1 ? 's' : '')
+            + ' pointée' + (vues > 1 ? 's' : '') + ', commencé ' + horodatageCourt(p.debut);
+        }).join('<br>')
+      + '<div class="actions">'
+      + cles.map(function(c) {
+          return '<button type="button" class="btn sec" data-reprendre="' + echapper(c) + '">Reprendre '
+            + echapper(libelleCle(c)) + '</button>';
+        }).join('')
+      + '<button type="button" class="btn sec" data-oublier="1">Tout effacer</button>'
+      + '</div>';
+    el.hidden = false;
+  }
+
+  function libelleCle(cle) {
+    var parts = String(cle).split('|');
+    return parts[0] + (parts[1] ? ' · ' + parts[1] : '');
+  }
+
+  /* ── Sélection des lignes ────────────────────────────────────────────────
+     `famille` vide = toutes. Les dépôts « Autre » et « (sans dépôt) » restent
+     pointables : ce sont justement les pièces qu'on espère retrouver. */
+  function lignesDe(depot, famille) {
+    return (donnees.lignes || []).filter(function(l) {
+      if (l.depot !== depot) return false;
+      if (famille && l.famille !== famille) return false;
+      return true;
+    });
+  }
+
+  function compterPieces(lignes) {
+    return lignes.reduce(function(s, l) { return s + (Number(l.quantite) || 0); }, 0);
+  }
+
+  function cleCourante() { return choix.depot + '|' + choix.famille; }
+
+  /* ── Mémoire des pointages ─────────────────────────────────────────────── */
+  function lireTousPointages() {
+    try {
+      var brut = localStorage.getItem(POINTAGES_STOCKAGE);
+      return brut ? (JSON.parse(brut) || {}) : {};
+    } catch (e) { return {}; }
+  }
+
+  function lirePointage(cle) {
+    var p = lireTousPointages()[cle];
+    return p && p.vues ? p : null;
+  }
+
+  /* Les clôtures enregistrées, purgées de ce qui a plus de CLOS_VALIDITE_MS. */
+  function lireClos() {
+    var tous;
+    try {
+      var brut = localStorage.getItem(CLOS_STOCKAGE);
+      tous = brut ? (JSON.parse(brut) || {}) : {};
+    } catch (e) { return {}; }
+
+    var limite = Date.now() - CLOS_VALIDITE_MS;
+    var vivants = {}, purge = false;
+    Object.keys(tous).forEach(function(c) {
+      if (tous[c] && tous[c].date > limite) { vivants[c] = tous[c]; } else { purge = true; }
+    });
+    if (purge) { try { localStorage.setItem(CLOS_STOCKAGE, JSON.stringify(vivants)); } catch (e) {} }
+    return vivants;
+  }
+
+  function marquerClos(cle, resume) {
+    var tous = lireClos();
+    tous[cle] = { date: Date.now(), manquant: resume.manquant, attendu: resume.attendu };
+    try { localStorage.setItem(CLOS_STOCKAGE, JSON.stringify(tous)); } catch (e) {}
+  }
+
+  /* Un dépôt pointé « Toutes familles » les couvre toutes : sans ce cas, la page
+     proposerait ensuite de repointer chacune d'elles une par une. */
+  function closPour(depot, famille) {
+    var tous = lireClos();
+    return tous[depot + '|'] || tous[depot + '|' + famille] || null;
+  }
+
+  /* Ce qu'il reste à pointer dans ce dépôt, une fois écarté ce qui vient d'être
+     clôturé. Les familles vides n'y figurent pas : il n'y a rien à y trouver. */
+  function famillesRestantes(depot) {
+    return (donnees.familles || []).filter(function(f) {
+      if (!lignesDe(depot, f).length) return false;
+      return !closPour(depot, f);
+    });
+  }
+
+  function ecrirePointage(cle, pointage) {
+    var tous = lireTousPointages();
+    if (pointage) { tous[cle] = pointage; } else { delete tous[cle]; }
+    try { localStorage.setItem(POINTAGES_STOCKAGE, JSON.stringify(tous)); } catch (e) {}
+  }
+
+  /* ── Écran 2 : le pointage ─────────────────────────────────────────────── */
+  function demarrer() {
+    var cle = cleCourante();
+    courant = lirePointage(cle) || { debut: Date.now(), cumul: 0, vues: {} };
+    courant.repriseA = Date.now();
+    ecrirePointage(cle, courant);
+
+    document.getElementById('ecranChoix').hidden = true;
+    document.getElementById('ecranBilan').hidden = true;
+    document.getElementById('ecranPointage').hidden = false;
+    reinitialiserPiedBilan();
+    document.getElementById('titrePointage').textContent = libelleCle(cle);
+    document.getElementById('recherche').value = '';
+    document.getElementById('retourScan').className = 'retour-scan';
+    dernierScan = { code: null, temps: 0 };
+
+    rendreListe();
+    majProgression();
+    window.scrollTo(0, 0);
+  }
+
+  function rendreListe() {
+    var lignes = lignesDe(choix.depot, choix.famille);
+    var conteneur = document.getElementById('liste');
+
+    if (!lignes.length) {
+      conteneur.innerHTML = '<div class="vide-msg">Aucune pièce dans ce dépôt.</div>';
+      return;
+    }
+
+    var parFamille = grouper(lignes, function(l) { return l.famille; });
+    var ordre = (donnees.familles || []).filter(function(f) { return parFamille[f]; });
+
+    conteneur.innerHTML = ordre.map(function(famille) {
+      var lignesFamille = parFamille[famille];
+      return '<div class="famille">'
+        + '<h3>' + echapper(famille) + ' <span>'
+        + compterPieces(lignesFamille) + ' à trouver</span></h3>'
+        + '<div class="cartes">'
+        + lignesFamille.map(function(l) { return carte(famille, l); }).join('')
+        + '</div></div>';
+    }).join('');
+
+    /* L'état visuel n'est jamais posé à la construction du HTML : une seule
+       fonction s'en charge, celle qui le refera à chaque coche. Deux endroits
+       auraient fini par ne plus dire la même chose. */
+    lignes.forEach(majCarte);
+  }
+
+  function carte(famille, l) {
+    var colonnes = (donnees.colonnesParFamille || {})[famille] || [];
+    var serie = l.type === TYPE_SERIE;
+    var nom = designation(famille, l);
+    /* L'identifiant ne se redit pas sous le titre quand c'est lui qui sert de
+       titre, faute de désignation : la ligne afficherait deux fois la même
+       chose et donnerait l'impression d'un bogue. */
+    var sousTitre = (nom === l.id ? '' : String(l.id || ''));
+
+    var detail = colonnes.map(function(nomCol, i) {
+      var valeur = formaterValeur(nomCol, l.valeurs[i]);
+      var vide = valeur === '';
+      return '<dt>' + echapper(nomCol) + '</dt><dd' + (vide ? ' class="vide"' : '') + '>'
+        + echapper(vide ? '—' : valeur) + '</dd>';
+    }).join('');
+
+    var recherche = (famille + ' ' + l.id + ' ' + l.valeurs.join(' ')).toLowerCase();
+
+    return '<article class="piece" data-ref="' + echapper(l.ref) + '"'
+      + ' data-cherche="' + echapper(recherche) + '">'
+      + '<div class="haut">'
+      + '<button class="tap" type="button" data-role="' + (serie ? 'plus' : 'basculer') + '">'
+      + '<span class="coche"></span>'
+      + '<span class="ident">'
+      + '<span class="nom">' + echapper(nom) + '</span>'
+      + '<span class="meta">' + echapper(sousTitre)
+      + (serie ? (sousTitre ? ' · ' : '') + l.quantite + ' attendus' : '') + '</span>'
+      + '</span>'
+      + '<span class="prix">' + echapper(euros(l.prix)) + '</span>'
+      + '</button>'
+      + '<button class="btn-fiche" type="button" data-role="fiche" aria-label="Voir le détail">i</button>'
+      + '</div>'
+      + (serie
+          ? '<div class="compteur">'
+            + '<button type="button" data-role="moins" aria-label="Un de moins">&minus;</button>'
+            + '<span class="score"><b>0</b> / ' + (Number(l.quantite) || 0) + '</span>'
+            + '<button type="button" data-role="plus" aria-label="Un de plus">+</button>'
+            + '<button type="button" class="tout" data-role="tout">tout</button>'
+            + '</div>'
+          : '')
+      + '<div class="fiche" hidden><dl>' + detail + '</dl></div>'
+      + '</article>';
+  }
+
+  /* Combien d'exemplaires de cette ligne ont été vus. */
+  function vue(ref) {
+    return Number((courant && courant.vues && courant.vues[ref]) || 0);
+  }
+
+  function poserVue(ref, valeur) {
+    if (!courant) return;
+    var n = Math.max(0, Number(valeur) || 0);
+    if (n === 0) { delete courant.vues[ref]; } else { courant.vues[ref] = n; }
+    compterGeste();
+  }
+
+  /* Le temps passé s'accumule geste par geste, et les longues pauses sont
+     écartées : voir PAUSE_MAX_MS. Un scan hors liste est un geste comme un
+     autre — et chaque geste est aussitôt gardé dans le téléphone. */
+  function compterGeste() {
+    var maintenant = Date.now();
+    var ecoule = maintenant - (courant.repriseA || maintenant);
+    courant.cumul = (courant.cumul || 0) + Math.min(Math.max(ecoule, 0), PAUSE_MAX_MS);
+    courant.repriseA = maintenant;
+
+    ecrirePointage(cleCourante(), courant);
+  }
+
+  function majCarte(l) {
+    var el = document.querySelector('.piece[data-ref="' + selecteur(l.ref) + '"]');
+    if (!el) return;
+
+    var attendu = Number(l.quantite) || 1;
+    var n = vue(l.ref);
+
+    el.classList.toggle('faite', n >= attendu);
+    el.classList.toggle('ecart-plus', n > attendu);
+
+    var score = el.querySelector('.score b');
+    if (score) score.textContent = n;
+
+    var moins = el.querySelector('[data-role="moins"]');
+    if (moins) moins.disabled = n <= 0;
+  }
+
+  /* ── Progression ────────────────────────────────────────────────────────
+     Le surplus ne fait pas dépasser la jauge : trouver 25 socles là où le
+     classeur en annonce 23 n'avance pas le pointage, ça le contredit. C'est
+     signalé à part, dans le bilan. */
+  function majProgression() {
+    var lignes = lignesDe(choix.depot, choix.famille);
+    var attendu = compterPieces(lignes);
+    var vues = lignes.reduce(function(s, l) {
+      return s + Math.min(vue(l.ref), Number(l.quantite) || 1);
+    }, 0);
+    var reste = attendu - vues;
+
+    document.getElementById('compteVues').innerHTML =
+      '<b>' + vues + '</b> vue' + (vues > 1 ? 's' : '') + ' sur ' + attendu;
+    document.getElementById('compteReste').textContent =
+      reste > 0 ? reste + ' à trouver' : 'tout est pointé';
+    document.getElementById('jauge').style.width =
+      (attendu ? Math.round((vues / attendu) * 100) : 0) + '%';
+  }
+
+  /* ── Filtre ─────────────────────────────────────────────────────────────
+     Masque, ne réordonne pas : une pièce filtrée reste à sa place dans le flux,
+     et l'effacement du champ la remet exactement où elle était. */
+  function filtrer() {
+    var q = document.getElementById('recherche').value.trim().toLowerCase();
+    var cartes = document.querySelectorAll('.piece');
+    for (var i = 0; i < cartes.length; i++) {
+      var texte = cartes[i].getAttribute('data-cherche') || '';
+      cartes[i].hidden = q ? texte.indexOf(q) === -1 : false;
+    }
+    /* Une famille dont plus rien ne correspond disparaît avec son titre : un
+       en-tête seul au-dessus du vide se lit comme une famille vide. */
+    var blocs = document.querySelectorAll('.famille');
+    for (var j = 0; j < blocs.length; j++) {
+      blocs[j].hidden = !blocs[j].querySelector('.piece:not([hidden])');
+    }
+  }
+
+  /* ── Bilan ─────────────────────────────────────────────────────────────── */
+  function bilan() {
+    var lignes = lignesDe(choix.depot, choix.famille);
+    var manquantes = [];
+    var ecarts = [];
+    var attendu = 0, vues = 0, valeurManquante = 0;
+
+    lignes.forEach(function(l) {
+      var q = Number(l.quantite) || 1;
+      var n = vue(l.ref);
+      attendu += q;
+      vues += Math.min(n, q);
+
+      var nom = designation(l.famille, l);
+
+      if (l.type === TYPE_SERIE) {
+        if (n === q) return;
+        ecarts.push({
+          nom: nom, vu: n, attendu: q, plus: n > q,
+          texte: nom + ' : ' + n + ' vu' + (n > 1 ? 's' : '') + ' sur ' + q
+        });
+        if (n < q) valeurManquante += (Number(l.prix) || 0) * (q - n);
+      } else if (n < 1) {
+        manquantes.push({
+          nom: nom, prix: Number(l.prix) || 0,
+          texte: nom + (l.id ? ' (' + l.id + ')' : '') + ' — ' + euros(l.prix)
+        });
+        valeurManquante += Number(l.prix) || 0;
+      }
+    });
+
+    return {
+      depot: choix.depot,
+      famille: choix.famille || 'Toutes',
+      attendu: attendu,
+      vu: vues,
+      manquant: attendu - vues,
+      valeurManquante: Math.round(valeurManquante * 100) / 100,
+      duree: duree(courant),
+      manquantes: manquantes,
+      ecarts: ecarts,
+      horsListe: horsListe()
+    };
+  }
+
+  /* Ce que le scan a vu sur l'étagère et qui n'était pas dans la liste : pièce
+     vendue, pièce d'un autre dépôt ou d'une autre famille, code inconnu. Rien
+     de tout ça n'entre dans les comptes — ça les contredirait —, mais c'est
+     souvent l'explication d'une manquante ailleurs. */
+  function horsListe() {
+    var hors = (courant && courant.hors) || {};
+    return Object.keys(hors).map(function(code) { return hors[code]; });
+  }
+
+  function rendreBilan() {
+    /* La caméra ne reste jamais allumée hors de l'écran de pointage : elle
+       viderait la batterie et continuerait de lire des étiquettes. */
+    arreterScan();
+    var b = bilan();
+
+    document.getElementById('titreBilan').textContent = 'Bilan — ' + libelleCle(cleCourante());
+
+    var complet = b.manquant === 0 && !b.ecarts.length;
+    document.getElementById('bilanBlocs').innerHTML =
+      blocBilan(b.vu + ' / ' + b.attendu, 'pointées', complet ? 'ok' : '')
+      + blocBilan(b.manquant, b.manquant > 1 ? 'manquantes' : 'manquante', b.manquant ? 'alerte' : 'ok')
+      + blocBilan(euros(b.valeurManquante), 'valeur', b.valeurManquante ? 'alerte' : 'ok')
+      + blocBilan(b.duree || '—', 'durée', '');
+
+    var blocs = [];
+
+    if (complet) {
+      blocs.push('<div class="etat ok">Tout a été trouvé — rien ne manque dans '
+        + echapper(b.depot) + '.</div>');
+    }
+
+    if (b.manquantes.length) {
+      blocs.push('<h2 class="section">Non trouvées (' + b.manquantes.length + ')</h2>'
+        + '<div class="bilan-liste">'
+        + b.manquantes.map(function(m) {
+            return '<div class="item"><span>' + echapper(m.nom) + '</span>'
+              + '<span class="droite">' + echapper(euros(m.prix)) + '</span></div>';
+          }).join('')
+        + '</div>');
+    }
+
+    if (b.ecarts.length) {
+      blocs.push('<h2 class="section">Écarts de quantité (' + b.ecarts.length + ')</h2>'
+        + '<div class="bilan-liste">'
+        + b.ecarts.map(function(e) {
+            return '<div class="item' + (e.plus ? ' plus' : '') + '"><span>' + echapper(e.nom) + '</span>'
+              + '<span class="droite">' + e.vu + ' sur ' + e.attendu
+              + (e.plus ? ' — en trop' : '') + '</span></div>';
+          }).join('')
+        + '</div>');
+    }
+
+    if (b.horsListe.length) {
+      blocs.push('<h2 class="section">Scannées hors liste (' + b.horsListe.length + ')</h2>'
+        + '<div class="bilan-liste">'
+        + b.horsListe.map(function(h) {
+            return '<div class="item plus"><span>' + echapper(h.nom) + '</span>'
+              + '<span class="droite">' + echapper(h.motif) + '</span></div>';
+          }).join('')
+        + '</div>');
+    }
+
+    blocs.push('<p class="sub" style="margin-top:14px">Enregistrer ajoute une ligne datée dans '
+      + 'la feuille <strong>Pointages</strong> du classeur. <strong>Le stock n\'est pas '
+      + 'modifié</strong> : une pièce non trouvée est souvent une pièce vendue non saisie, '
+      + 'rangée ailleurs, ou cachée derrière une autre — c\'est à vous de trancher, pas à '
+      + 'la page.</p>');
+
+    document.getElementById('bilanDetail').innerHTML = blocs.join('');
+
+    document.getElementById('ecranPointage').hidden = true;
+    document.getElementById('ecranBilan').hidden = false;
+    etatBilan('', null);
+    reinitialiserPiedBilan();
+    document.getElementById('btnEnregistrer').disabled = b.attendu === 0;
+    window.scrollTo(0, 0);
+  }
+
+  function blocBilan(valeur, libelle, classe) {
+    return '<div class="bloc"><div class="val ' + classe + '">' + echapper(String(valeur))
+      + '</div><div class="lib">' + echapper(libelle) + '</div></div>';
+  }
+
+  function etatBilan(texte, classe) {
+    var el = document.getElementById('bilanEtat');
+    if (!texte) { el.hidden = true; el.textContent = ''; return; }
+    el.className = 'etat ' + (classe || 'attente');
+    el.textContent = texte;
+    el.hidden = false;
+  }
+
+  /* Le compte rendu est composé ICI, par la page : c'est elle qui sait ce
+     qu'elle a affiché et ce que le doigt a coché. Le serveur date, valide et
+     écrit — même partage des rôles que pour le bon de dépôt signé. */
+  function enregistrer() {
+    var b = bilan();
+    var btn = document.getElementById('btnEnregistrer');
+    var cle = cleAcces(false);
+    if (!cle) { etatBilan("Clé d'accès requise.", 'ko'); return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Enregistrement…';
+    etatBilan('Écriture dans le classeur…', 'attente');
+
+    appelApi('enregistrerPointage', cle, {
+      depot: b.depot,
+      famille: b.famille,
+      attendu: b.attendu,
+      vu: b.vu,
+      manquant: b.manquant,
+      valeurManquante: b.valeurManquante,
+      duree: b.duree,
+      manquantes: b.manquantes.map(function(m) { return m.texte; }).join(' · '),
+      /* Ce que le scan a trouvé hors de la liste part avec les écarts : la
+         feuille `Pointages` n'a pas de colonne pour ça, et en ajouter une
+         demanderait une migration pour un texte qui se lit très bien ici. */
+      ecarts: b.ecarts.map(function(e) { return e.texte; })
+        .concat(b.horsListe.map(function(h) { return 'Hors liste : ' + h.texte; }))
+        .join(' · ')
+    })
+      .then(function(res) {
+        /* Le pointage n'est oublié qu'UNE FOIS l'écriture confirmée : l'effacer
+           avant ferait perdre une heure de relevé sur un simple réseau coupé. */
+        ecrirePointage(cleCourante(), null);
+        marquerClos(cleCourante(), b);
+        courant = null;
+        etatBilan('Enregistré dans la feuille « ' + ((res && res.feuille) || 'Pointages')
+          + ' » le ' + ((res && res.date) || '') + '.', 'ok');
+
+        /* Le pointage d'une famille en appelle une autre : c'est le moment où on
+           est encore devant l'étagère, pas une fois le téléphone rangé. */
+        rendreSuite();
+        btn.hidden = true;
+        var gauche = document.getElementById('btnReprendre');
+        gauche.textContent = 'Changer de dépôt';
+        gauche.classList.add('large');
+        window.scrollTo(0, 0);
+      })
+      .catch(function(err) {
+        if (err && err.authRefusee) {
+          etatBilan("Clé d'accès refusée. Retouchez le bouton pour la saisir de nouveau.", 'ko');
+        } else {
+          etatBilan("Rien n'a été enregistré : " + ((err && err.message) || err)
+            + " — le pointage est conservé dans le téléphone, vous pouvez réessayer.", 'ko');
+        }
+        btn.disabled = false;
+        btn.textContent = 'Enregistrer dans le classeur';
+      });
+  }
+
+  /* « Et maintenant ? » — les familles du même dépôt qu'il reste à pointer, en
+     gros boutons qui démarrent directement. Une famille finie appelle la
+     suivante, et c'est maintenant qu'il faut le proposer : on est encore devant
+     l'étagère. */
+  function rendreSuite() {
+    var el = document.getElementById('bilanSuite');
+    var restantes = famillesRestantes(choix.depot);
+
+    if (!restantes.length) {
+      el.innerHTML = '<div class="suite">'
+        + '<div class="titre-suite">Tout ' + echapper(choix.depot) + ' est pointé</div>'
+        + '<div class="sous-suite">Il ne reste aucune famille à parcourir dans ce dépôt. '
+        + 'Le bouton du bas permet d\'en choisir un autre.</div>'
+        + '</div>';
+      el.hidden = false;
+      return;
+    }
+
+    el.innerHTML = '<div class="suite">'
+      + '<div class="titre-suite">Et maintenant ?</div>'
+      + '<div class="sous-suite">' + restantes.length
+      + (restantes.length > 1 ? ' familles restent' : ' famille reste')
+      + ' à pointer dans ' + echapper(choix.depot) + '. Touchez-en une pour enchaîner.</div>'
+      + '<div class="choix">'
+      + restantes.map(function(f) {
+          return '<button type="button" class="pastille-choix" data-suite="' + echapper(f) + '">'
+            + echapper(f) + '<span class="compte">'
+            + compterPieces(lignesDe(choix.depot, f)) + '</span></button>';
+        }).join('')
+      + '</div>'
+      + '</div>';
+    el.hidden = false;
+  }
+
+  /* Remet le pied du bilan dans son état d'avant enregistrement. Sans ça, le
+     bilan de la famille suivante s'ouvrirait avec « Changer de dépôt » à la
+     place du bouton d'enregistrement, et rien ne permettrait de la clore. */
+  function reinitialiserPiedBilan() {
+    var enregistrer = document.getElementById('btnEnregistrer');
+    enregistrer.hidden = false;
+    enregistrer.disabled = false;
+    enregistrer.textContent = 'Enregistrer dans le classeur';
+    var gauche = document.getElementById('btnReprendre');
+    gauche.textContent = 'Reprendre';
+    gauche.classList.remove('large');
+    document.getElementById('bilanSuite').hidden = true;
+  }
+
+  /* Après une clôture enregistrée il n'y a plus de pointage à reprendre : le
+     bouton de retour ramène au choix plutôt qu'à une liste vidée de ses coches,
+     qui donnerait à croire que le relevé a été perdu. */
+  function quitterBilan() {
+    if (!courant) { revenirAuChoix(); return; }
+    document.getElementById('ecranBilan').hidden = true;
+    document.getElementById('ecranPointage').hidden = false;
+  }
+
+  function revenirAuChoix() {
+    arreterScan();
+    document.getElementById('ecranPointage').hidden = true;
+    document.getElementById('ecranBilan').hidden = true;
+    document.getElementById('ecranChoix').hidden = false;
+    reinitialiserPiedBilan();
+    rendreChoix();
+    window.scrollTo(0, 0);
+  }
+
+  /* ── Scan ────────────────────────────────────────────────────────────────
+     L'étiquette porte l'ID de la ligne (colonne ID de la feuille de famille),
+     rien d'autre — pièce unique comme modèle en série. Un scan répond à UNE
+     question : cette pièce est-elle là où le classeur l'attend ? */
+  var lecteur = null;
+  var scanActif = false;
+  var dernierScan = { code: null, temps: 0 };
+
+  /* Même lecture de l'ID des deux côtés : la feuille peut porter une espace en
+     trop, et la page de vente accole « ::point de vente » aux modèles en série. */
+  function normaliserCode(code) {
+    return String(code === null || code === undefined ? '' : code).split('::')[0].trim().toLowerCase();
+  }
+
+  /* La première ligne de `liste` portant ce code, en préférant celles du dépôt
+     pointé — un modèle en série a une ligne par point de vente, toutes du même ID. */
+  function trouverParCode(liste, code) {
+    var cible = normaliserCode(code);
+    if (!cible) return null;
+    var trouvees = (liste || []).filter(function(l) { return normaliserCode(l.id) === cible; });
+    var ici = trouvees.filter(function(l) { return l.depot === choix.depot; })[0];
+    return ici || trouvees[0] || null;
+  }
+
+  function traiterScan(texte) {
+    var code = String(texte === null || texte === undefined ? '' : texte).trim();
+    if (!code || !courant) return;
+
+    var maintenant = Date.now();
+    if (code === dernierScan.code && maintenant - dernierScan.temps < ANTI_DOUBLON_MS) return;
+    dernierScan = { code: code, temps: maintenant };
+
+    /* 1. Dans la liste en cours : c'est le cas normal. */
+    var l = trouverParCode(lignesDe(choix.depot, choix.famille), code);
+    if (l) {
+      var nom = designation(l.famille, l);
+      if (l.type === TYPE_SERIE) {
+        /* Un modèle en série ne se pointe pas au scan (G61) : scanner 23 socles
+           identiques un par un, avec 2,5 s d'attente entre deux lectures du même
+           code, serait plus long que les compter. On amène le compteur à l'œil. */
+        cibler(l);
+        signalerScan('« ' + nom + ' » est en série : comptez les exemplaires avec + et −.', 'info');
+        bip(true);
+        return;
+      }
+      if (vue(l.ref) >= 1) {
+        signalerScan('« ' + nom + ' » est déjà pointée.', 'info');
+        bip(true);
+        return;
+      }
+      poserVue(l.ref, 1);
+      majCarte(l);
+      majProgression();
+      eclairer(l);
+      signalerScan('✓ ' + nom, 'ok');
+      bip(true);
+      vibrer(40);
+      return;
+    }
+
+    /* 2. Dans le stock, mais pas dans ce pointage. */
+    var ailleurs = trouverParCode(donnees.lignes, code);
+    if (ailleurs) {
+      var nomAilleurs = designation(ailleurs.famille, ailleurs);
+      if (ailleurs.depot === choix.depot) {
+        /* Même dépôt, autre famille : rien d'anormal, on pointe une famille à la
+           fois. On le dit sans l'inscrire au bilan. */
+        signalerScan('« ' + nomAilleurs + ' » est de la famille ' + ailleurs.famille
+          + ', hors de ce pointage.', 'info');
+        bip(true);
+        return;
+      }
+      noterHors(code, nomAilleurs, 'attendue : ' + ailleurs.depot);
+      signalerScan('⚠ « ' + nomAilleurs + ' » est attendue à ' + ailleurs.depot
+        + ', pas ici. Notée au bilan.', 'alerte');
+      bip(false);
+      vibrer([80, 60, 80]);
+      return;
+    }
+
+    /* 3. Une pièce VENDUE sur l'étagère : vente saisie à tort, ou pièce jamais
+          remise au client. Le cas qui justifie à lui seul le scan. */
+    var vendue = trouverParCode(donnees.vendues, code);
+    if (vendue) {
+      var nomVendue = designation(vendue.famille, vendue);
+      noterHors(code, nomVendue, 'vendue le ' + (vendue.vendue || '?'));
+      signalerScan('⚠ « ' + nomVendue + ' » est VENDUE (' + (vendue.vendue || 'date inconnue')
+        + ') mais se trouve ici. Notée au bilan.', 'alerte');
+      bip(false);
+      vibrer([80, 60, 80]);
+      return;
+    }
+
+    /* 4. Inconnu : étiquette d'une fiche supprimée, ou autre QR que les nôtres. */
+    noterHors(code, 'Code « ' + code + ' »', 'inconnu du stock');
+    signalerScan('✕ Code « ' + code + ' » inconnu du stock. Noté au bilan.', 'err');
+    bip(false);
+  }
+
+  function noterHors(code, nom, motif) {
+    courant.hors = courant.hors || {};
+    courant.hors[normaliserCode(code)] = { nom: nom, motif: motif, texte: nom + ' (' + motif + ')' };
+    compterGeste();
+  }
+
+  function signalerScan(texte, genre) {
+    var el = document.getElementById('retourScan');
+    el.className = 'retour-scan visible ' + genre;
+    el.textContent = texte;
+  }
+
+  function carteDe(l) {
+    return document.querySelector('.piece[data-ref="' + selecteur(l.ref) + '"]');
+  }
+
+  function eclairer(l) {
+    var el = carteDe(l);
+    if (!el) return;
+    el.classList.remove('eclair');
+    void el.offsetWidth;          // relance l'animation si la même carte s'allume deux fois
+    el.classList.add('eclair');
+  }
+
+  /* Amène une carte sous les yeux, sous la barre collée en haut. */
+  function cibler(l) {
+    var el = carteDe(l);
+    if (!el) return;
+    var precedente = document.querySelector('.piece.cible');
+    if (precedente) precedente.classList.remove('cible');
+    el.classList.add('cible');
+    var barre = document.querySelector('#ecranPointage .barre');
+    var haut = el.getBoundingClientRect().top + window.pageYOffset
+      - (barre ? barre.offsetHeight : 0) - 12;
+    window.scrollTo(0, Math.max(0, haut));
+  }
+
+  /* Retour sonore et tactile : on scanne sans regarder l'écran, les yeux sur
+     l'étagère. Aigu = bon, grave = à regarder. */
+  function bip(succes) {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var o = ctx.createOscillator();
+      var g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = succes ? 880 : 220;
+      g.gain.value = 0.08;
+      o.start();
+      setTimeout(function() { o.stop(); ctx.close(); }, succes ? 110 : 260);
+    } catch (e) { /* son indisponible : sans conséquence */ }
+  }
+
+  function vibrer(motif) {
+    try { if (navigator.vibrate) navigator.vibrate(motif); } catch (e) {}
+  }
+
+  function basculerScan() {
+    if (scanActif) { arreterScan(); } else { demarrerScan(); }
+  }
+
+  function demarrerScan() {
+    if (typeof Html5Qrcode === 'undefined') {
+      signalerScan('Le lecteur de QR n\'a pas pu se charger. Rechargez la page avec du réseau.', 'err');
+      return;
+    }
+    var zone = document.getElementById('lecteur');
+    zone.classList.add('actif');
+    lecteur = new Html5Qrcode('lecteur', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
+    var config = {
+      fps: 10,
+      /* Image deux fois plus large que haute : la moitié de la hauteur d'un
+         format 4:3, donc plus de liste visible dessous. Un téléphone qui ne
+         sait pas la fournir donne une image plus haute, jamais déformée. */
+      aspectRatio: 2,
+      /* Zone de visée calculée sur l'image RÉELLEMENT affichée, quel que soit
+         le format obtenu : un carré de 80 % du petit côté. */
+      qrbox: function(largeur, hauteur) {
+        var cote = Math.max(50, Math.floor(Math.min(largeur, hauteur) * 0.8));
+        return { width: cote, height: cote };
+      }
+    };
+
+    /* Caméra arrière demandée par son rôle, pas par son nom : les libellés des
+       caméras ne sont connus qu'APRÈS une première autorisation, et varient d'un
+       téléphone à l'autre. */
+    lecteur.start({ facingMode: 'environment' }, config, traiterScan).then(function() {
+      scanActif = true;
+      var btn = document.getElementById('btnScan');
+      btn.classList.add('actif');
+      btn.textContent = '✕ Caméra';
+      signalerScan('Visez une étiquette.', 'info');
+    }).catch(function(err) {
+      zone.classList.remove('actif');
+      signalerScan('Impossible d\'ouvrir la caméra : ' + err
+        + ' — vous pouvez toujours toucher les lignes.', 'err');
+    });
+  }
+
+  function arreterScan() {
+    if (lecteur && scanActif) {
+      lecteur.stop().then(function() { lecteur.clear(); finaliserArretScan(); })
+        .catch(finaliserArretScan);
+    } else {
+      finaliserArretScan();
+    }
+  }
+
+  function finaliserArretScan() {
+    scanActif = false;
+    document.getElementById('lecteur').classList.remove('actif');
+    var btn = document.getElementById('btnScan');
+    btn.classList.remove('actif');
+    btn.textContent = '📷 Scanner';
+  }
+
+  /* ── Outils ─────────────────────────────────────────────────────────────── */
+
+  /* Le nom d'une pièce, tel qu'il s'affiche partout : sur la carte comme dans le
+     compte rendu. Deux formules auraient fini par nommer différemment la même
+     pièce, et le bilan serait devenu impossible à recouper avec l'écran. */
+  function designation(famille, ligne) {
+    return valeurColonne(famille, ligne, 'Désignation') || ligne.id || '(sans désignation)';
+  }
+
+  function valeurColonne(famille, ligne, nomColonne) {
+    var colonnes = (donnees.colonnesParFamille || {})[famille] || [];
+    var i = colonnes.indexOf(nomColonne);
+    if (i === -1) return '';
+    var v = ligne.valeurs[i];
+    return v === undefined || v === null ? '' : String(v);
+  }
+
+  function couleurDepot(depot) {
+    return (donnees.couleursDepot || {})[depot] || '#6b6257';
+  }
+
+  /* « Autre » et « (sans dépôt) » ne sont pas des lieux : le dire sur la
+     pastille, sans quoi elle se lit comme une boutique de plus. */
+  function mentionDepot(depot) {
+    var mention = (donnees.depotsSansLieu || {})[depot];
+    return mention ? '<span class="mention">' + echapper(mention) + '</span>' : '';
+  }
+
+  function grouper(liste, cle) {
+    var groupes = {};
+    liste.forEach(function(item) {
+      var k = cle(item);
+      (groupes[k] = groupes[k] || []).push(item);
+    });
+    return groupes;
+  }
+
+  function estColonnePrix(nom) { return nom.indexOf('(€)') !== -1; }
+
+  function formaterValeur(nom, valeur) {
+    if (valeur === '' || valeur === null || valeur === undefined) return '';
+    if (estColonnePrix(nom)) return euros(valeur);
+    return String(valeur);
+  }
+
+  function euros(montant) {
+    var n = Number(montant) || 0;
+    try {
+      return n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR', maximumFractionDigits: 2 });
+    } catch (e) {
+      return n.toFixed(2).replace('.', ',') + ' €';
+    }
+  }
+
+  function duree(pointage) {
+    if (!pointage) return '';
+    var ms = Number(pointage.cumul) || 0;
+    var minutes = Math.round(ms / 60000);
+    if (minutes < 1) return '< 1 min';
+    if (minutes < 60) return minutes + ' min';
+    return Math.floor(minutes / 60) + ' h ' + (minutes % 60) + ' min';
+  }
+
+  function horodatageCourt(ms) {
+    if (!ms) return '';
+    var d = new Date(ms);
+    function deux(n) { return (n < 10 ? '0' : '') + n; }
+    return 'le ' + deux(d.getDate()) + '/' + deux(d.getMonth() + 1)
+      + ' à ' + deux(d.getHours()) + 'h' + deux(d.getMinutes());
+  }
+
+  function echapper(texte) {
+    return String(texte === null || texte === undefined ? '' : texte)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  /* Une référence contient « # », « @ » et des accents : elle ne peut pas partir
+     telle quelle dans un sélecteur CSS. Seul le guillemet est capable de fermer
+     l'attribut, c'est donc le seul à échapper. */
+  function selecteur(ref) {
+    return String(ref).replace(/"/g, '\\"');
+  }
+
+  function ligneParRef(ref) {
+    var lignes = donnees.lignes || [];
+    for (var i = 0; i < lignes.length; i++) {
+      if (lignes[i].ref === ref) return lignes[i];
+    }
+    return null;
+  }
+
+  /* ── Événements ─────────────────────────────────────────────────────────
+     Délégués depuis les conteneurs : la liste est reconstruite à chaque
+     changement de dépôt, et rebrancher un écouteur par carte finirait par en
+     laisser un derrière. */
+  document.getElementById('choixDepot').addEventListener('click', function(ev) {
+    var btn = ev.target.closest('[data-depot]');
+    if (!btn) return;
+    choix.depot = btn.getAttribute('data-depot');
+    choix.famille = '';
+    rendreChoix();
+  });
+
+  document.getElementById('choixFamille').addEventListener('click', function(ev) {
+    var btn = ev.target.closest('[data-famille]');
+    if (!btn) return;
+    choix.famille = btn.getAttribute('data-famille');
+    rendreChoixFamille();
+    majBoutonDemarrer();
+  });
+
+  document.getElementById('reprise').addEventListener('click', function(ev) {
+    var reprendre = ev.target.closest('[data-reprendre]');
+    if (reprendre) {
+      var parts = reprendre.getAttribute('data-reprendre').split('|');
+      choix.depot = parts[0];
+      choix.famille = parts[1] || '';
+      demarrer();
+      return;
+    }
+    if (ev.target.closest('[data-oublier]')) {
+      if (!window.confirm('Effacer tous les pointages en cours ? Ce qui a été coché sera perdu.')) return;
+      try { localStorage.removeItem(POINTAGES_STOCKAGE); } catch (e) {}
+      /* Les coches ET la mémoire de ce qui a été clôturé : sans les secondes, les
+         familles resteraient marquées faites alors qu'on repart de zéro. Ce qui
+         est déjà écrit dans le classeur, lui, n'est pas touché. */
+      try { localStorage.removeItem(CLOS_STOCKAGE); } catch (e) {}
+      rendreReprise();
+      majBoutonDemarrer();
+    }
+  });
+
+  document.getElementById('bilanSuite').addEventListener('click', function(ev) {
+    var famille = ev.target.closest('[data-suite]');
+    if (famille) {
+      choix.famille = famille.getAttribute('data-suite');
+      demarrer();
+      return;
+    }
+    if (ev.target.closest('[data-suite-depot]')) { revenirAuChoix(); }
+  });
+
+  document.getElementById('btnDemarrer').addEventListener('click', demarrer);
+  document.getElementById('btnRetour').addEventListener('click', revenirAuChoix);
+  document.getElementById('btnRetourPointage').addEventListener('click', quitterBilan);
+  document.getElementById('btnReprendre').addEventListener('click', quitterBilan);
+  document.getElementById('btnCloturer').addEventListener('click', rendreBilan);
+  document.getElementById('btnEnregistrer').addEventListener('click', enregistrer);
+  document.getElementById('recherche').addEventListener('input', filtrer);
+  document.getElementById('btnScan').addEventListener('click', basculerScan);
+
+  /* Téléphone verrouillé ou page quittée : on coupe la caméra. Au retour, un
+     geste la rallume — la rallumer toute seule surprendrait. */
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden && scanActif) arreterScan();
+  });
+
+  document.getElementById('liste').addEventListener('click', function(ev) {
+    var bouton = ev.target.closest('[data-role]');
+    if (!bouton) return;
+    var carteEl = bouton.closest('.piece');
+    if (!carteEl) return;
+
+    if (bouton.getAttribute('data-role') === 'fiche') {
+      var fiche = carteEl.querySelector('.fiche');
+      fiche.hidden = !fiche.hidden;
+      return;
+    }
+
+    var ref = carteEl.getAttribute('data-ref');
+    var ligne = ligneParRef(ref);
+    if (!ligne) return;
+
+    var attendu = Number(ligne.quantite) || 1;
+    var n = vue(ref);
+    var role = bouton.getAttribute('data-role');
+
+    if (role === 'basculer' || role === 'tout') { poserVue(ref, n >= attendu ? 0 : attendu); }
+    else if (role === 'plus') { poserVue(ref, n + 1); }
+    else if (role === 'moins') { poserVue(ref, n - 1); }
+
+    majCarte(ligne);
+    majProgression();
+  });
+
+  charger(false);
+
+  /* Le même service worker que la page de vente : il garde cette page et le
+     lecteur de QR pour une ouverture sans réseau. */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(function() {});
+    });
+  }
+</script>
+</body>
+</html>
