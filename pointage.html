@@ -279,6 +279,32 @@
       color: var(--rouge); }
     .etat.attente { background: var(--bg-card2); border: 1px solid var(--border); color: var(--text-3); }
 
+    /* ── Stock périmé ──
+       Le repli sur le dernier stock reçu est une bonne chose : pointer sur un stock
+       d'hier vaut mieux que ne rien pouvoir faire devant l'étagère. Mais il doit se
+       VOIR. Il était annoncé par un `<span>` ajouté à la fin du sous-titre, en petit
+       gris, dans une phrase qu'on ne relit plus — et le 03/10 des chiffres périmés sont
+       passés pour les bons. Un bandeau, donc, de la largeur de l'écran, en haut. */
+    .perime {
+      background: rgba(224,131,111,0.14);
+      border: 1px solid var(--rouge);
+      border-left: 4px solid var(--rouge);
+      border-radius: 10px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+    }
+    .perime-titre {
+      font-size: 14px; font-weight: 700; color: var(--rouge);
+      margin-bottom: 4px;
+    }
+    .perime-corps { font-size: 12.5px; color: var(--text-2); line-height: 1.55; }
+    .perime button {
+      margin-top: 10px; width: 100%;
+      background: var(--rouge); color: #241410;
+      border: none; border-radius: 8px; padding: 11px;
+      font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer;
+    }
+
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -286,6 +312,12 @@
 
   <h1>Pointage d'inventaire</h1>
   <p class="sub" id="introduction">Scannez l'étiquette de chaque pièce, ou touchez sa ligne. <span id="genere"></span></p>
+
+  <div class="perime" id="perime" hidden>
+    <div class="perime-titre">⚠ Chiffres périmés</div>
+    <div class="perime-corps" id="perimeCorps"></div>
+    <button type="button" onclick="reessayerChargement()">Réessayer de joindre le serveur</button>
+  </div>
 
   <div class="anomalie" id="anomalie" hidden></div>
   <div class="chargement" id="chargement">Chargement du stock…</div>
@@ -471,6 +503,14 @@
     });
   }
 
+  /* Le bouton du bandeau. Il relance le chargement normal : si le serveur répond,
+     `recevoir(data, false)` éteint le bandeau de lui-même. Rien à défaire à la main. */
+  function reessayerChargement() {
+    document.getElementById('perime').hidden = true;
+    document.getElementById('ecranChoix').hidden = true;
+    charger(false);
+  }
+
   function lireDonneesSecours() {
     try {
       var brut = localStorage.getItem(DONNEES_STOCKAGE);
@@ -520,9 +560,22 @@
     donnees.familles = donnees.familles || [];
     donnees.colonnesParFamille = donnees.colonnesParFamille || {};
     donnees.vendues = donnees.vendues || [];
+    // En ligne, la date reste dans le sous-titre : c'est une information, pas une alerte.
     document.getElementById('genere').textContent =
-      (donnees.genereLe ? 'Stock au ' + donnees.genereLe + '.' : '')
-      + (horsLigne ? ' Hors ligne : dernier stock reçu par ce téléphone.' : '');
+      (!horsLigne && donnees.genereLe) ? 'Stock au ' + donnees.genereLe + '.' : '';
+
+    // Hors ligne, elle passe dans le bandeau — avec la date EN CLAIR : « périmé » sans
+    // date ne dit pas de combien, et c'est la date qui fait décider de pointer ou d'attendre.
+    const bandeau = document.getElementById('perime');
+    if (horsLigne) {
+      document.getElementById('perimeCorps').textContent =
+        (donnees.genereLe ? 'Ces chiffres datent du ' + donnees.genereLe + '. ' : '') +
+        'Le serveur n\'a pas répondu : c\'est le dernier stock reçu par ce téléphone, ' +
+        'pas celui d\'aujourd\'hui. Les pièces vendues depuis y figurent encore.';
+      bandeau.hidden = false;
+    } else {
+      bandeau.hidden = true;
+    }
     signalerAnomalies();
     rendreChoix();
     document.getElementById('chargement').hidden = true;

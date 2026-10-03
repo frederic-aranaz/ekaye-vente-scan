@@ -11,7 +11,7 @@
    remplacés, et les téléphones qui ont déjà installé la page gardent l'ancienne
    version indéfiniment. C'est la seule ligne à ne jamais oublier de toucher.
    ───────────────────────────────────────────────────────────────────────────── */
-const VERSION = 'v4';   // v4 : page de pointage par scan (25/09/2026)
+const VERSION = 'v5';   // v5 : bandeau des chiffres périmés sur le pointage (03/10/2026)
 const CACHE = 'ekaye-vente-' + VERSION;
 
 /* Tout ce qu'il faut pour qu'un démarrage à froid sans réseau donne une page
