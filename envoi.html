@@ -123,6 +123,31 @@
 
     .vide { font-size: 13px; color: var(--text-3); text-align: center; padding: 26px 10px; line-height: 1.6; }
 
+    /* ── Saisie à la main ─────────────────────────────────────────────────── */
+    #zoneSaisie { margin-bottom: 12px; }
+    #rechercheStock {
+      width: 100%; padding: 12px 10px; font-size: 16px; font-family: var(--font);
+      background: var(--bg-card2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 9px;
+    }
+    #btnSaisie.actif { background: rgba(226,169,90,.18); border-color: var(--ek-clair); }
+    .resultat {
+      display: flex; gap: 10px; align-items: center; width: 100%; text-align: left;
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px; margin-top: 8px; color: var(--text); font-family: var(--font);
+    }
+    .resultat .corps { flex: 1 1 auto; min-width: 0; }
+    /* `display: block` et pas des <div> : le contenu d'un <button> est du contenu de
+       phrase, un <div> y est invalide. Sans ces deux lignes, la désignation et son
+       détail se suivent sur la même ligne — « Anna de N. #186Anna de N. · anna186 ». */
+    .resultat .nom { display: block; font-size: 14px; font-weight: 600; }
+    .resultat .meta { display: block; font-size: 11px; color: var(--text-3); margin-top: 3px; line-height: 1.5; }
+    .resultat .prix { font-size: 13px; color: var(--text-2); white-space: nowrap; }
+    /* Une pièce vendue reste MONTRÉE, et se distingue : la chercher et ne rien trouver
+       ferait croire à une faute de frappe. On la propose, le refus l'explique. */
+    .resultat.vendue { opacity: .55; border-style: dashed; }
+    .resultat.dedans { border-color: rgba(127,176,105,.55); }
+
     /* ── Pied fixe : ce que le carton contient, et le pas suivant ─────────── */
     .pied {
       position: fixed; left: 0; right: 0; bottom: 0; background: rgba(20,18,16,.97);
@@ -172,8 +197,21 @@
   <div id="lecteur"></div>
   <div class="barre">
     <button class="secondaire" id="btnScan">📷 Scanner</button>
+    <button class="secondaire" id="btnSaisie">✎ Saisir</button>
     <button class="secondaire" id="btnRetourPrepa">Changer la destination</button>
   </div>
+
+  <!-- Saisie à la main : une étiquette décollée, illisible, ou un carton préparé au
+       bureau. Même porte d'entrée que le scan (`ajouterParCode`), donc exactement les
+       mêmes refus. -->
+  <div id="zoneSaisie" hidden>
+    <input type="search" id="rechercheStock" autocomplete="off"
+           placeholder="Numéro, désignation, couleur…">
+    <div class="aide" id="aideSaisie">Trois caractères suffisent. La recherche porte sur
+      le stock déjà chargé : elle marche sans réseau.</div>
+    <div id="resultats"></div>
+  </div>
+
   <div class="retour-scan" id="retourScan"></div>
   <div id="carton"></div>
 </section>
@@ -479,6 +517,13 @@
     return null;
   }
 
+  /* La caméra passe par ici, la saisie à la main par `ajouterParCode` directement : seul
+     l'anti-doublon les sépare. Une étiquette reste dans le champ et serait relue dix fois
+     par seconde ; un doigt qui touche une ligne, non.
+
+     Tout le reste — pièce vendue, code inconnu, déjà dans le carton, série qui
+     s'incrémente — est commun aux deux, et doit le rester : deux chemins d'ajout qui
+     jugeraient différemment finiraient par accepter d'un côté ce que l'autre refuse. */
   function traiterScan(texte) {
     var code = String(texte === null || texte === undefined ? '' : texte).trim();
     if (!code) return;
@@ -487,6 +532,10 @@
     if (code === dernierScan.code && maintenant - dernierScan.temps < ANTI_DOUBLON_MS) return;
     dernierScan = { code: code, temps: maintenant };
 
+    ajouterParCode(code);
+  }
+
+  function ajouterParCode(code) {
     /* 1. Déjà dans le carton. Une série s'incrémente — c'est le geste naturel quand on
           pose un deuxième socle identique ; une pièce unique, non, elle est unique. */
     var presente = dansCarton(code);
@@ -612,6 +661,118 @@
     enregistrerCarton();
     rendreCarton();
     if (!carton.length) signalerScan('Carton vide.', 'info');
+  }
+
+  /* ══ Saisie à la main ═════════════════════════════════════════════════════
+     Une étiquette décollée, un QR illisible, un carton préparé au bureau. La recherche
+     porte sur le stock DÉJÀ CHARGÉ : elle est instantanée et marche sans réseau, là où
+     la caméra demande de la lumière et deux mains.
+
+     Elle n'ajoute rien elle-même : elle appelle `ajouterParCode`, le même chemin que le
+     scan. Deux portes d'entrée qui jugeraient séparément finiraient par accepter d'un
+     côté ce que l'autre refuse. */
+  var SAISIE_MIN = 3;
+  var SAISIE_MAX = 8;
+
+  document.getElementById('btnSaisie').onclick = function() {
+    var zone = document.getElementById('zoneSaisie');
+    var ouvre = zone.hidden;
+    zone.hidden = !ouvre;
+    this.classList.toggle('actif', ouvre);
+    if (ouvre) {
+      /* La caméra et le clavier ne cohabitent pas sur un téléphone : l'un couvre
+         l'autre. Ouvrir la saisie referme le lecteur. */
+      if (scanActif) arreterScan();
+      document.getElementById('rechercheStock').focus();
+    } else {
+      document.getElementById('rechercheStock').value = '';
+      document.getElementById('resultats').innerHTML = '';
+    }
+  };
+
+  document.getElementById('rechercheStock').oninput = function() {
+    rendreResultats(this.value);
+  };
+
+  /* Les lignes du stock qui correspondent, dédoublonnées par identifiant.
+     Un modèle en série a une entrée d'inventaire PAR point de vente, toutes du même ID :
+     sans dédoublonnage, « socle » sortirait trois fois et on ne saurait pas laquelle
+     toucher. On garde celle du dépôt de DÉPART, c'est de là qu'on retire. */
+  function chercherStock(texte) {
+    var q = String(texte || '').trim().toLowerCase();
+    if (q.length < SAISIE_MIN) return [];
+
+    var vus = {};
+    var trouves = [];
+
+    function examiner(liste, vendue) {
+      (liste || []).forEach(function(l) {
+        if (trouves.length >= SAISIE_MAX) return;
+        var cle = normaliserCode(l.id);
+        if (vus[cle]) return;
+        var foin = (l.id + ' ' + l.famille + ' ' + (l.valeurs || []).join(' ')).toLowerCase();
+        if (foin.indexOf(q) === -1) return;
+        /* Pour une série, on préfère la ligne du dépôt de départ : c'est sa quantité
+           qui compte, et c'est elle que `ajouterSerie` ira relire. */
+        if (!vendue && l.type === TYPE_SERIE && l.depot !== choix.departSerie) {
+          var auDepart = (donnees.lignes || []).filter(function(x) {
+            return normaliserCode(x.id) === cle && x.depot === choix.departSerie;
+          })[0];
+          if (auDepart) l = auDepart;
+        }
+        vus[cle] = true;
+        trouves.push({ ligne: l, vendue: vendue });
+      });
+    }
+
+    examiner(donnees.lignes, false);
+    /* Les vendues en dernier, et montrées : chercher une pièce et ne rien trouver ferait
+       croire à une faute de frappe, alors que la réponse est « elle est partie ». */
+    examiner(donnees.vendues, true);
+    return trouves;
+  }
+
+  function rendreResultats(texte) {
+    var el = document.getElementById('resultats');
+    var q = String(texte || '').trim();
+
+    if (q.length < SAISIE_MIN) { el.innerHTML = ''; return; }
+
+    var trouves = chercherStock(q);
+    if (!trouves.length) {
+      el.innerHTML = '<div class="vide">Rien de tel dans le stock chargé.</div>';
+      return;
+    }
+
+    el.innerHTML = trouves.map(function(t) {
+      var l = t.ligne;
+      var nom = designation(l.famille, l);
+      var deja = dansCarton(l.id);
+      var classes = 'resultat' + (t.vendue ? ' vendue' : '') + (deja ? ' dedans' : '');
+      var ou = t.vendue
+        ? 'VENDUE le ' + (l.vendue || '?')
+        : (l.type === TYPE_SERIE
+            ? l.quantite + ' à ' + l.depot
+            : (l.depot || 'sans dépôt'));
+      return '<button type="button" class="' + classes + '" data-ajouter="' + echapper(l.id) + '">'
+        + '<span class="corps">'
+        + '<span class="nom">' + echapper(nom) + (deja ? ' ✓' : '') + '</span>'
+        + '<span class="meta">' + echapper(l.famille) + ' · <code>' + echapper(String(l.id).trim())
+        + '</code> · ' + echapper(ou) + '</span></span>'
+        + '<span class="prix">' + euros(l.prix) + '</span>'
+        + '</button>';
+    }).join('');
+
+    el.querySelectorAll('[data-ajouter]').forEach(function(b) {
+      b.onclick = function() {
+        ajouterParCode(b.getAttribute('data-ajouter'));
+        /* Le champ se vide : on enchaîne la pièce suivante sans effacer à la main. La
+           liste, elle, se redessine pour marquer ce qui vient d'entrer dans le carton. */
+        document.getElementById('rechercheStock').value = '';
+        document.getElementById('resultats').innerHTML = '';
+        document.getElementById('rechercheStock').focus();
+      };
+    });
   }
 
   /* ══ Rendu du carton ══════════════════════════════════════════════════════ */
