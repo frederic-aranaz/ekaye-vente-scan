@@ -11,7 +11,8 @@
    remplacés, et les téléphones qui ont déjà installé la page gardent l'ancienne
    version indéfiniment. C'est la seule ligne à ne jamais oublier de toucher.
    ───────────────────────────────────────────────────────────────────────────── */
-const VERSION = 'v6';   // v6 : page d'envoi en dépôt constituée au scan (09/10/2026)
+const VERSION = 'v7';   // v7 : annulation d'un envoi depuis le bilan (09/10/2026)
+/* v6 : page d'envoi en dépôt constituée au scan (09/10/2026). */
 const CACHE = 'ekaye-vente-' + VERSION;
 
 /* Tout ce qu'il faut pour qu'un démarrage à froid sans réseau donne une page

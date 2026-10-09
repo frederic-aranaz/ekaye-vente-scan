@@ -763,6 +763,20 @@
         + '<div style="height:10px"></div>'
         + '<button class="secondaire" id="btnNouveau" style="width:100%">Préparer un autre envoi</button>'
         + '</div>');
+    }
+
+    /* Défaire, tant que c'est encore frais. Le journal a consigné le dépôt d'origine et
+       la date de dépôt de chaque pièce : tout est calculable, rien n'est à retaper.
+       En dernier, et en bouton effacé : c'est le geste du « je me suis trompé de
+       carton », pas la suite normale. Passé cet écran, il reste le menu du classeur. */
+    if (r.ok) {
+      blocs.push('<div class="carte">'
+        + '<div class="sous" style="margin-bottom:12px">Erreur de carton ? Chaque pièce '
+        + 'repart d\'où elle venait, avec sa date de dépôt d\'avant, et les lignes du '
+        + 'journal sont marquées annulées — pas effacées. Une pièce vendue ou déplacée '
+        + 'depuis sera refusée et nommée.</div>'
+        + '<button class="secondaire" id="btnAnnuler" style="width:100%">Annuler cet envoi</button>'
+        + '</div>');
     } else {
       blocs.push('<div class="carte">'
         + '<button class="secondaire" id="btnReprendre" style="width:100%">Revenir au carton</button>'
@@ -794,6 +808,92 @@
     if (btnReprendre) {
       btnReprendre.onclick = function() { cacherBandeau(); montrer('ecranScan'); rendreCarton(); };
     }
+    var btnAnnuler = document.getElementById('btnAnnuler');
+    if (btnAnnuler) btnAnnuler.onclick = function() { annulerEnvoi(r, this); };
+  }
+
+  /* Demande au serveur de défaire l'envoi. On passe l'`idEnvoi` et rien d'autre : ce
+     qu'on défait, c'est le GESTE, avec l'état d'avant qu'il a emporté avec lui. Une
+     liste de pièces retapée ici ne saurait pas d'où chacune venait. */
+  function annulerEnvoi(resultat, bouton) {
+    var cle = cleAcces(false);
+    if (!cle) return;
+    if (!window.confirm('Annuler cet envoi ? Chaque pièce repartira d\'où elle venait.')) return;
+
+    bouton.disabled = true;
+    bouton.textContent = 'Annulation…';
+    cacherBandeau();
+
+    appelApi('annulerEnvoi', cle, { idEnvoi: idEnvoi }).then(function(a) {
+      bouton.disabled = false;
+      bouton.textContent = 'Annuler cet envoi';
+      rendreBilanAnnulation(a);
+    }).catch(function(err) {
+      bouton.disabled = false;
+      bouton.textContent = 'Annuler cet envoi';
+      bandeau('L\'annulation n\'a pas abouti',
+        'L\'envoi est toujours enregistré, rien n\'a changé à moitié — le serveur écrit '
+        + 'tout ou refuse. Réessayez, ou passez par le menu du classeur : '
+        + '<em>Envoi en dépôt : annuler le dernier envoi</em>.'
+        + '<br>Détail : <code>' + echapper((err && err.message) || 'réseau') + '</code>',
+        'err', 'Réessayer', function() {
+          cacherBandeau();
+          var b = document.getElementById('btnAnnuler');
+          if (b) b.click();
+        });
+    });
+  }
+
+  function rendreBilanAnnulation(a) {
+    var el = document.getElementById('ecranBilan');
+    var blocs = [];
+
+    if (a.ok) {
+      blocs.push('<div class="bandeau ok"><div class="titre">Envoi annulé</div>'
+        + echapper(resumeServeur(a)) + ' rendu' + (a.articles > 1 ? 's' : '')
+        + ' à leur dépôt d\'origine.<br>'
+        + '<ul class="liste-motifs">'
+        + a.rendues.map(function(x) {
+            return '<li>' + echapper(x.designation) + ' — ' + echapper(x.detail) + '</li>';
+          }).join('')
+        + '</ul>Les lignes du journal sont marquées annulées, pas supprimées : '
+        + 'l\'envoi et son annulation restent lisibles.</div>');
+    } else {
+      blocs.push('<div class="bandeau err"><div class="titre">Rien n\'a été rendu</div>'
+        + echapper(a.message || 'Le registre a tout refusé.') + '</div>');
+    }
+
+    /* Les refus d'abord : ce sont les pièces qui RESTENT chez le dépositaire, donc
+       celles que le bon doit continuer de porter. S'en apercevoir ici évite de croire
+       l'envoi entièrement défait. */
+    if ((a.refusees || []).length) {
+      blocs.push('<div class="bandeau alerte"><div class="titre">'
+        + a.refusees.length + (a.refusees.length > 1 ? ' pièces non rendues' : ' pièce non rendue')
+        + '</div><ul class="liste-motifs">'
+        + a.refusees.map(function(x) {
+            return '<li>' + echapper(x.designation || x.id) + ' — ' + echapper(x.motif) + '</li>';
+          }).join('')
+        + '</ul>Elles sont toujours chez le dépositaire, et figureront toujours sur le bon.</div>');
+    }
+
+    if ((a.anomalies || []).length) {
+      blocs.push('<div class="bandeau alerte"><div class="titre">À regarder au classeur</div>'
+        + '<ul class="liste-motifs">'
+        + a.anomalies.map(function(x) { return '<li>' + echapper(x) + '</li>'; }).join('')
+        + '</ul></div>');
+    }
+
+    blocs.push('<div class="carte">'
+      + '<button class="principal" id="btnNouveau" style="width:100%">Préparer un autre envoi</button>'
+      + '</div>');
+
+    el.innerHTML = blocs.join('');
+    montrer('ecranBilan');
+    document.getElementById('btnNouveau').onclick = function() {
+      oublierCarton();
+      cacherBandeau();
+      charger(false);
+    };
   }
 
   function resumeServeur(r) {
