@@ -211,6 +211,7 @@
   var scanActif = false;
   var dernierScan = { code: null, temps: 0 };
   var idEnvoi = null;       /* fixé à la PREMIÈRE tentative, réutilisé sur toute retentative */
+  var cartonEcrit = null;   /* la réponse du serveur, une fois l'envoi abouti */
 
   /* ══ Clé d'accès et API — à l'identique du pointage ═══════════════════════ */
   function cleAcces(redemander) {
@@ -375,11 +376,21 @@
     return 'envoi-' + Date.now() + '-' + Math.floor(Math.random() * 1e9);
   }
 
-  /* ══ Le carton, mémorisé ══════════════════════════════════════════════════ */
+  /* ══ Le carton, mémorisé ══════════════════════════════════════════════════
+     `ecrit` porte la réponse du serveur quand l'envoi a abouti, et il change tout au
+     retour : un carton ÉCRIT ne doit jamais être remis à la coche.
+
+     Sans cette distinction, fermer la page sur le bilan puis la rouvrir reproposait le
+     carton en annonçant qu'il « n'avait pas encore été enregistré » — un mensonge. Et
+     pire : y ajouter une pièce puis réenregistrer réutilisait le même `idEnvoi`, que le
+     serveur reconnaît comme déjà traité. Il rendait alors sa réponse d'origine SANS rien
+     écrire, et la page affichait « Envoi enregistré » pour une pièce qui n'y était pas.
+     L'idempotence protégeait les données et fabriquait un faux compte rendu. */
   function enregistrerCarton() {
     try {
       localStorage.setItem(CARTON_STOCKAGE, JSON.stringify({
-        choix: choix, carton: carton, idEnvoi: idEnvoi, quand: Date.now()
+        choix: choix, carton: carton, idEnvoi: idEnvoi, quand: Date.now(),
+        ecrit: cartonEcrit
       }));
     } catch (e) {}
   }
@@ -387,12 +398,10 @@
   function oublierCarton() {
     carton = [];
     idEnvoi = null;
+    cartonEcrit = null;
     try { localStorage.removeItem(CARTON_STOCKAGE); } catch (e) {}
   }
 
-  /* Un carton repris est un carton dont on n'a pas vu l'écriture aboutir. On le remet
-     en place plutôt que de le perdre — mais on le DIT, parce que le stock a pu bouger
-     entre-temps et que c'est le serveur qui tranchera. */
   function reprendreCarton() {
     var brut = null;
     try { brut = localStorage.getItem(CARTON_STOCKAGE); } catch (e) {}
@@ -404,17 +413,38 @@
     choix = repris.choix || choix;
     carton = repris.carton;
     idEnvoi = repris.idEnvoi || idUnique();
+    cartonEcrit = repris.ecrit || null;
 
     document.getElementById('destination').value = choix.depot || '';
     document.getElementById('dateEnvoi').value = choix.date || '';
     document.getElementById('departSerie').value = choix.departSerie || 'Atelier';
 
+    /* Déjà écrit : on rouvre son BILAN, pas son carton. Le bon reste à sortir, et
+       l'envoi reste annulable — c'est exactement l'écran qu'on avait quitté. */
+    if (cartonEcrit && cartonEcrit.ok) {
+      rendreBilan(cartonEcrit);
+      bandeau('Cet envoi est déjà enregistré',
+        resume(carton) + ' pour ' + echapper(choix.depot || '?') + ', au '
+        + echapper(dateFr(choix.date)) + ', ont bien été écrites dans le registre. '
+        + 'Vous aviez quitté la page avant de sortir le bon.',
+        'ok', 'Préparer un autre envoi', function() {
+          oublierCarton();
+          cacherBandeau();
+          charger(false);
+        });
+      return;
+    }
+
+    /* Pas écrit : on le remet en place plutôt que de le perdre — mais on le DIT, parce
+       que le stock a pu bouger et que c'est le serveur qui tranchera. */
     bandeau('Un envoi était en cours',
       resume(carton) + ' pour ' + echapper(choix.depot || '?') + ', au '
       + echapper(dateFr(choix.date)) + ', n\'avaient pas encore été enregistrées. '
       + 'Elles sont remises dans le carton.<br>Le stock a pu bouger depuis : une pièce '
       + 'vendue entre-temps sera refusée à l\'enregistrement, et nommée.',
       'alerte', 'Vider le carton', function() {
+        /* Rien n'a été écrit dans le registre : le carton n'a jamais vécu ailleurs que
+           dans ce téléphone. On ne perd que le scan. */
         oublierCarton();
         cacherBandeau();
         rendreCarton();
@@ -676,6 +706,9 @@
     }).then(function(r) {
       bouton.disabled = false;
       bouton.textContent = 'Enregistrer';
+      /* Mémorisé AVANT d'afficher : si la page se ferme sur le bilan, sa réouverture
+         doit retrouver un envoi écrit, et non reproposer le carton à la coche. */
+      if (r && r.ok) { cartonEcrit = r; enregistrerCarton(); }
       rendreBilan(r);
     }).catch(function(err) {
       bouton.disabled = false;
