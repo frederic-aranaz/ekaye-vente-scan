@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Envoi en dépôt EKAYE</title>
+  <!-- Pourquoi cette page vit ICI et non en `?envoi` sur Apps Script : l'iframe
+       d'Apps Script refuse la caméra (getUserMedia), comme elle l'a refusée à la page
+       de vente puis au pointage. Même lecteur, servi depuis ce dépôt.
+
+       Pourquoi une page à part du pointage, qui scanne aussi : ce sont deux métiers.
+       Le pointage constate et n'écrit rien dans le stock ; l'envoi DÉPLACE des pièces.
+       Elles partagent leur source (getInventaire_, via getEnvoi), pas leur code — c'est
+       déjà le partage entre ?inventaire et ?pointage.
+
+       Ce que cette page ne fait PAS : dessiner le bon de dépôt. Elle écrit l'envoi, puis
+       elle renvoie vers ?inventaire pré-filtré sur le dépôt et la date, où le bon existe
+       déjà avec sa mise en page, son pavé de signature, son PDF et son email. Une seconde
+       mise en page écrite ici aurait fini par en diverger sans que rien ne le signale. -->
+  <script src="html5-qrcode.min.js"></script>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#141210">
+  <link rel="icon" href="icone-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icone-192.png">
+  <style>
+    :root {
+      --ek: #86673C; --ek-clair: #e2a95a; --bg: #141210; --bg-card: #1e1b17;
+      --bg-card2: #252118; --text: #eeece8; --text-2: #d8c8a8; --text-3: #a08860;
+      --border: rgba(226,169,90,0.25);
+      --vert: #7fb069; --orange: #e0a05a; --rouge: #e0836f;
+      --font: 'Segoe UI', system-ui, -apple-system, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--font); background: var(--bg); color: var(--text);
+      padding: 16px; max-width: 760px; margin: 0 auto; padding-bottom: 120px;
+      -webkit-text-size-adjust: 100%;
+    }
+    h1 { font-size: 19px; font-weight: 600; letter-spacing: .02em; }
+    h1 .ek { color: var(--ek-clair); }
+    .sous { font-size: 12px; color: var(--text-3); margin-top: 4px; line-height: 1.5; }
+    header { margin-bottom: 16px; }
+
+    /* Bandeau : date, conséquence, et quoi faire — jamais une phrase en petit gris
+       ajoutée à la fin d'un sous-titre. Le 03/10, des chiffres périmés sont passés pour
+       les bons devant une étagère pour cette raison exacte. */
+    .bandeau {
+      border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px;
+      line-height: 1.55; border: 1px solid;
+    }
+    .bandeau.err { background: rgba(224,131,111,.12); border-color: rgba(224,131,111,.5); }
+    .bandeau.alerte { background: rgba(224,160,90,.12); border-color: rgba(224,160,90,.5); }
+    .bandeau.ok { background: rgba(127,176,105,.12); border-color: rgba(127,176,105,.5); }
+    .bandeau .titre { font-weight: 700; margin-bottom: 4px; }
+    .bandeau button {
+      margin-top: 8px; background: transparent; color: var(--text); font-size: 12px;
+      border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px;
+    }
+
+    .carte {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+      padding: 14px; margin-bottom: 14px;
+    }
+    label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 14px; }
+    label:last-child { margin-bottom: 0; }
+    select, input[type="date"] {
+      width: 100%; margin-top: 5px; padding: 11px 10px; font-size: 16px;
+      background: var(--bg-card2); color: var(--text);
+      border: 1px solid var(--border); border-radius: 9px; font-family: var(--font);
+    }
+    .aide { font-size: 11px; color: var(--text-3); margin-top: 4px; line-height: 1.5; }
+
+    button.principal {
+      width: 100%; padding: 14px; font-size: 15px; font-weight: 600;
+      background: var(--ek); color: #fff; border: none; border-radius: 10px;
+      font-family: var(--font);
+    }
+    button.principal[disabled] { opacity: .45; }
+    button.secondaire {
+      padding: 11px 14px; font-size: 13px; background: transparent; color: var(--text);
+      border: 1px solid var(--border); border-radius: 9px; font-family: var(--font);
+    }
+
+    /* ── Scan ─────────────────────────────────────────────────────────────── */
+    #lecteur { display: none; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+    #lecteur.actif { display: block; }
+    #lecteur video { width: 100% !important; display: block; }
+
+    .barre { display: flex; gap: 8px; margin-bottom: 12px; }
+    .barre button { flex: 1 1 auto; }
+    #btnScan.actif { background: rgba(224,131,111,.18); border-color: rgba(224,131,111,.6); }
+
+    .retour-scan {
+      display: none; border-radius: 9px; padding: 10px 12px; font-size: 13px;
+      margin-bottom: 12px; line-height: 1.5; border: 1px solid;
+    }
+    .retour-scan.visible { display: block; }
+    .retour-scan.ok { background: rgba(127,176,105,.14); border-color: rgba(127,176,105,.5); }
+    .retour-scan.info { background: rgba(226,169,90,.1); border-color: var(--border); }
+    .retour-scan.alerte { background: rgba(224,160,90,.14); border-color: rgba(224,160,90,.5); }
+    .retour-scan.err { background: rgba(224,131,111,.14); border-color: rgba(224,131,111,.5); }
+
+    /* ── Le carton ────────────────────────────────────────────────────────── */
+    .piece {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 11px;
+      padding: 11px 12px; margin-bottom: 9px; display: flex; gap: 10px; align-items: center;
+    }
+    .piece.neuve { border-color: rgba(127,176,105,.6); }
+    .piece .corps { flex: 1 1 auto; min-width: 0; }
+    .piece .nom { font-size: 14px; font-weight: 600; }
+    .piece .meta { font-size: 11px; color: var(--text-3); margin-top: 3px; line-height: 1.5; }
+    .piece .prix { font-size: 13px; color: var(--text-2); white-space: nowrap; }
+    .piece .retirer {
+      background: transparent; border: 1px solid var(--border); color: var(--text-3);
+      border-radius: 8px; width: 34px; height: 34px; font-size: 16px; flex: 0 0 auto;
+    }
+    .qte { display: flex; align-items: center; gap: 7px; flex: 0 0 auto; }
+    .qte button {
+      width: 32px; height: 32px; font-size: 17px; background: var(--bg-card2);
+      color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+    }
+    .qte .valeur { min-width: 26px; text-align: center; font-size: 15px; font-weight: 600; }
+
+    .vide { font-size: 13px; color: var(--text-3); text-align: center; padding: 26px 10px; line-height: 1.6; }
+
+    /* ── Pied fixe : ce que le carton contient, et le pas suivant ─────────── */
+    .pied {
+      position: fixed; left: 0; right: 0; bottom: 0; background: rgba(20,18,16,.97);
+      border-top: 1px solid var(--border); padding: 11px 16px 14px;
+      backdrop-filter: blur(6px);
+    }
+    .pied .dedans { max-width: 760px; margin: 0 auto; display: flex; gap: 12px; align-items: center; }
+    .pied .compte { flex: 1 1 auto; font-size: 12px; color: var(--text-2); line-height: 1.5; }
+    .pied .compte strong { color: var(--ek-clair); font-size: 14px; }
+    .pied button { flex: 0 0 auto; width: auto; padding: 12px 18px; }
+
+    .liste-motifs { font-size: 12px; line-height: 1.6; margin: 6px 0 0 16px; }
+    .liste-motifs li { margin-bottom: 3px; }
+    code { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--text-2); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1><span class="ek">EKAYE</span> — Envoi en dépôt</h1>
+  <div class="sous" id="sous">Chargement du stock…</div>
+</header>
+
+<div id="bandeau" class="bandeau err" hidden></div>
+
+<!-- ÉCRAN 1 — ce que l'envoi est -->
+<section class="carte" id="ecranPrepa" hidden>
+  <label>Destination
+    <select id="destination"></select>
+  </label>
+  <label>Date de l'envoi
+    <input type="date" id="dateEnvoi">
+    <span class="aide">La date du départ, pas celle de la réception : c'est elle qui
+      datera le bon de dépôt et la colonne « Date de dépôt » de chaque pièce.</span>
+  </label>
+  <label>Les séries partent de
+    <select id="departSerie"></select>
+    <span class="aide">Pour les socles et objets déco, qui se comptent en quantités :
+      l'envoi en retire d'ici et les ajoute à la destination. Les pièces uniques, elles,
+      partent de là où le registre les attend, quel qu'il soit.</span>
+  </label>
+  <button class="principal" id="btnCommencer">Commencer à scanner</button>
+</section>
+
+<!-- ÉCRAN 2 — le carton -->
+<section id="ecranScan" hidden>
+  <div id="lecteur"></div>
+  <div class="barre">
+    <button class="secondaire" id="btnScan">📷 Scanner</button>
+    <button class="secondaire" id="btnRetourPrepa">Changer la destination</button>
+  </div>
+  <div class="retour-scan" id="retourScan"></div>
+  <div id="carton"></div>
+</section>
+
+<!-- ÉCRAN 3 — ce qui a été écrit -->
+<section id="ecranBilan" hidden></section>
+
+<div class="pied" id="pied" hidden>
+  <div class="dedans">
+    <div class="compte" id="compte"></div>
+    <button class="principal" id="btnEcrire">Enregistrer</button>
+  </div>
+</div>
+
+<script>
+  /* ══ Constantes partagées avec la page de vente et le pointage ═══════════ */
+  var TYPE_SERIE = 'Série';
+  var CLE_STOCKAGE = 'ekaye_vente_cle';
+  var URL_API_STOCKAGE = 'ekaye_vente_url_api';
+  var URL_API_DEFAUT = 'https://script.google.com/macros/s/AKfycbwl4wyUyxOyrWVtXVvjoS-7LMqAULNaNBCAUdBZxRYTlFF3OVkjE0mWifOiG6oqK_h5Xg/exec';
+
+  /* La caméra lit en continu : une étiquette restée dans le champ serait relue dix fois
+     par seconde. Même délai que la page de vente et le pointage. */
+  var ANTI_DOUBLON_MS = 2500;
+
+  /* Le carton en cours, dans le téléphone. Un écran qui se verrouille pendant qu'on
+     ferme un colis ne doit pas vider le carton — et l'écriture, elle, n'a lieu qu'une
+     fois, à la fin. */
+  var CARTON_STOCKAGE = 'ekaye_envoi_en_cours_v1';
+
+  var donnees = null;
+  var choix = { depot: '', date: '', departSerie: '' };
+  var carton = [];          /* [{ id, famille, designation, prix, type, depotOrigine, quantite, depart }] */
+  var lecteur = null;
+  var scanActif = false;
+  var dernierScan = { code: null, temps: 0 };
+  var idEnvoi = null;       /* fixé à la PREMIÈRE tentative, réutilisé sur toute retentative */
+
+  /* ══ Clé d'accès et API — à l'identique du pointage ═══════════════════════ */
+  function cleAcces(redemander) {
+    var cle = null;
+    try { cle = redemander ? null : localStorage.getItem(CLE_STOCKAGE); } catch (e) {}
+    if (!cle) {
+      cle = (window.prompt("Clé d'accès au registre EKAYE :") || '').trim();
+      if (!cle) return null;
+      try { localStorage.setItem(CLE_STOCKAGE, cle); } catch (e) {}
+    }
+    return cle;
+  }
+
+  function oublierCle() { try { localStorage.removeItem(CLE_STOCKAGE); } catch (e) {} }
+
+  function urlApi() {
+    var url = null;
+    try { url = localStorage.getItem(URL_API_STOCKAGE); } catch (e) {}
+    return url || URL_API_DEFAUT;
+  }
+
+  /* POST, clé dans le CORPS — jamais dans l'URL, qui finirait dans l'historique et les
+     journaux de Google. `text/plain` évite la requête préalable CORS, qu'Apps Script ne
+     sait pas servir. La réponse est lue en texte d'abord : quand Apps Script attend une
+     ré-autorisation il répond une page HTML, et « Unexpected token '<' » n'aide personne
+     un carton sur les bras. */
+  function appelApi(action, cle, data) {
+    return fetch(urlApi(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: action, cle: cle, data: data })
+    })
+    .then(function(r) {
+      return r.text().then(function(texte) {
+        try { return JSON.parse(texte); } catch (e) {
+          throw new Error('réponse illisible du serveur (HTTP ' + r.status + ')');
+        }
+      });
+    })
+    .then(function(reponse) {
+      if (reponse && reponse.authRefusee) {
+        oublierCle();
+        var refus = new Error("Clé d'accès refusée.");
+        refus.authRefusee = true;
+        throw refus;
+      }
+      if (reponse && reponse.erreur) throw new Error(reponse.erreur);
+      return reponse;
+    });
+  }
+
+  /* ══ Bandeau ══════════════════════════════════════════════════════════════ */
+  function bandeau(titre, texte, genre, boutonTexte, boutonAction) {
+    var el = document.getElementById('bandeau');
+    el.className = 'bandeau ' + (genre || 'err');
+    el.innerHTML = '<div class="titre">' + echapper(titre) + '</div>' + texte
+      + (boutonTexte ? '<button type="button" id="btnBandeau">' + echapper(boutonTexte) + '</button>' : '');
+    el.hidden = false;
+    if (boutonTexte) document.getElementById('btnBandeau').onclick = boutonAction;
+  }
+
+  function cacherBandeau() { document.getElementById('bandeau').hidden = true; }
+
+  /* ══ Chargement ═══════════════════════════════════════════════════════════
+     Pas de repli sur un stock mémorisé, contrairement au pointage : cette page ÉCRIT.
+     Pointer sur des chiffres de la semaine dernière reste utile ; constituer un envoi
+     sur un stock périmé déplacerait des pièces vendues depuis, et c'est le serveur qui
+     s'en apercevrait — trop tard, le colis étant fermé. Sans réseau, on le dit. */
+  function charger(redemander) {
+    document.getElementById('sous').textContent = 'Chargement du stock…';
+    var cle = cleAcces(redemander);
+    if (!cle) {
+      bandeau("Clé d'accès requise", "Le registre ne s'ouvre pas sans elle.",
+        'err', 'Saisir la clé', function() { charger(true); });
+      return;
+    }
+    cacherBandeau();
+
+    appelApi('getEnvoi', cle, null).then(function(data) {
+      donnees = data;
+      document.getElementById('sous').textContent = 'Stock au ' + (data.genereLe || '?')
+        + '. Scannez les étiquettes des pièces que vous mettez dans le colis.';
+      preparerEcranPrepa();
+      reprendreCarton();
+    }).catch(function(err) {
+      if (err && err.authRefusee) {
+        bandeau("Clé d'accès refusée", 'Le registre a refusé la clé enregistrée.',
+          'err', 'La saisir de nouveau', function() { charger(true); });
+        return;
+      }
+      bandeau('Le stock n\'a pas pu être chargé',
+        'Sans lui, impossible de savoir ce que porte une étiquette ni ce qui reste en '
+        + 'rayon — et cette page écrit dans le registre, elle ne peut pas travailler de '
+        + 'mémoire. <br>Détail : <code>' + echapper((err && err.message) || 'réseau') + '</code>',
+        'err', 'Réessayer', function() { charger(false); });
+      document.getElementById('sous').textContent = '';
+    });
+  }
+
+  /* ══ Écran 1 — la destination ═════════════════════════════════════════════ */
+  function preparerEcranPrepa() {
+    var dest = document.getElementById('destination');
+    /* L'Atelier n'est pas une destination d'envoi : on ne « dépose » pas chez soi, et
+       un bon de dépôt à soi-même n'a pas de sens. Un retour de dépôt se fait au
+       classeur. */
+    var destinations = (donnees.depotsFixes || []).filter(function(d) { return d !== 'Atelier'; });
+    dest.innerHTML = destinations.map(function(d) {
+      return '<option value="' + echapper(d) + '">' + echapper(d) + '</option>';
+    }).join('');
+
+    var depart = document.getElementById('departSerie');
+    depart.innerHTML = (donnees.pointsDeVenteSerie || []).map(function(d) {
+      return '<option value="' + echapper(d) + '"' + (d === 'Atelier' ? ' selected' : '') + '>'
+        + echapper(d) + '</option>';
+    }).join('');
+
+    var champDate = document.getElementById('dateEnvoi');
+    if (!champDate.value) champDate.value = donnees.aujourdHui || '';
+
+    montrer('ecranPrepa');
+  }
+
+  function montrer(ecran) {
+    ['ecranPrepa', 'ecranScan', 'ecranBilan'].forEach(function(id) {
+      document.getElementById(id).hidden = (id !== ecran);
+    });
+    document.getElementById('pied').hidden = (ecran !== 'ecranScan');
+    if (ecran !== 'ecranScan' && scanActif) arreterScan();
+  }
+
+  document.getElementById('btnCommencer').onclick = function() {
+    choix.depot = document.getElementById('destination').value;
+    choix.date = document.getElementById('dateEnvoi').value;
+    choix.departSerie = document.getElementById('departSerie').value;
+    if (!choix.date) {
+      bandeau('Date manquante', "Sans date, le bon de dépôt ne saurait pas quelle "
+        + 'livraison il atteste.', 'alerte');
+      return;
+    }
+    if (choix.depot === choix.departSerie) {
+      bandeau('Départ et destination identiques',
+        'Les séries partiraient de « ' + echapper(choix.depot) + ' » pour y arriver. '
+        + 'Choisissez un autre dépôt de départ.', 'alerte');
+      return;
+    }
+    cacherBandeau();
+    /* Un identifiant par carton, fixé ici : il rend l'écriture rejouable sans jamais
+       déplacer deux fois les mêmes pièces, même si le réseau fait croire à un échec. */
+    idEnvoi = idUnique();
+    enregistrerCarton();
+    montrer('ecranScan');
+    rendreCarton();
+  };
+
+  document.getElementById('btnRetourPrepa').onclick = function() {
+    cacherBandeau();
+    montrer('ecranPrepa');
+  };
+
+  function idUnique() {
+    try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
+    return 'envoi-' + Date.now() + '-' + Math.floor(Math.random() * 1e9);
+  }
+
+  /* ══ Le carton, mémorisé ══════════════════════════════════════════════════ */
+  function enregistrerCarton() {
+    try {
+      localStorage.setItem(CARTON_STOCKAGE, JSON.stringify({
+        choix: choix, carton: carton, idEnvoi: idEnvoi, quand: Date.now()
+      }));
+    } catch (e) {}
+  }
+
+  function oublierCarton() {
+    carton = [];
+    idEnvoi = null;
+    try { localStorage.removeItem(CARTON_STOCKAGE); } catch (e) {}
+  }
+
+  /* Un carton repris est un carton dont on n'a pas vu l'écriture aboutir. On le remet
+     en place plutôt que de le perdre — mais on le DIT, parce que le stock a pu bouger
+     entre-temps et que c'est le serveur qui tranchera. */
+  function reprendreCarton() {
+    var brut = null;
+    try { brut = localStorage.getItem(CARTON_STOCKAGE); } catch (e) {}
+    if (!brut) return;
+    var repris = null;
+    try { repris = JSON.parse(brut); } catch (e) { return; }
+    if (!repris || !repris.carton || !repris.carton.length) return;
+
+    choix = repris.choix || choix;
+    carton = repris.carton;
+    idEnvoi = repris.idEnvoi || idUnique();
+
+    document.getElementById('destination').value = choix.depot || '';
+    document.getElementById('dateEnvoi').value = choix.date || '';
+    document.getElementById('departSerie').value = choix.departSerie || 'Atelier';
+
+    bandeau('Un envoi était en cours',
+      resume(carton) + ' pour ' + echapper(choix.depot || '?') + ', au '
+      + echapper(dateFr(choix.date)) + ', n\'avaient pas encore été enregistrées. '
+      + 'Elles sont remises dans le carton.<br>Le stock a pu bouger depuis : une pièce '
+      + 'vendue entre-temps sera refusée à l\'enregistrement, et nommée.',
+      'alerte', 'Vider le carton', function() {
+        oublierCarton();
+        cacherBandeau();
+        rendreCarton();
+        montrer('ecranPrepa');
+      });
+    montrer('ecranScan');
+    rendreCarton();
+  }
+
+  /* ══ Scan ═════════════════════════════════════════════════════════════════ */
+  /* Même lecture de l'identifiant que partout : la feuille peut porter une espace en
+     trop, et la page de vente accole « ::point de vente » aux modèles en série. */
+  function normaliserCode(code) {
+    return String(code === null || code === undefined ? '' : code).split('::')[0].trim().toLowerCase();
+  }
+
+  function trouverParCode(liste, code) {
+    var cible = normaliserCode(code);
+    if (!cible) return null;
+    var trouvees = (liste || []).filter(function(l) { return normaliserCode(l.id) === cible; });
+    /* Un modèle en série a une ligne d'inventaire par point de vente, toutes du même
+       ID : on prend celle du dépôt de DÉPART choisi, c'est de là qu'on retire. */
+    var auDepart = trouvees.filter(function(l) { return l.depot === choix.departSerie; })[0];
+    return auDepart || trouvees[0] || null;
+  }
+
+  function dansCarton(id) {
+    var cible = normaliserCode(id);
+    for (var i = 0; i < carton.length; i++) {
+      if (normaliserCode(carton[i].id) === cible) return carton[i];
+    }
+    return null;
+  }
+
+  function traiterScan(texte) {
+    var code = String(texte === null || texte === undefined ? '' : texte).trim();
+    if (!code) return;
+
+    var maintenant = Date.now();
+    if (code === dernierScan.code && maintenant - dernierScan.temps < ANTI_DOUBLON_MS) return;
+    dernierScan = { code: code, temps: maintenant };
+
+    /* 1. Déjà dans le carton. Une série s'incrémente — c'est le geste naturel quand on
+          pose un deuxième socle identique ; une pièce unique, non, elle est unique. */
+    var presente = dansCarton(code);
+    if (presente) {
+      if (presente.type === TYPE_SERIE) {
+        if (!ajusterQuantite(presente, +1, true)) return;
+        signalerScan('✓ ' + presente.designation + ' — ' + presente.quantite + ' exemplaires', 'ok');
+        bip(true); vibrer(40);
+        return;
+      }
+      signalerScan('« ' + presente.designation + ' » est déjà dans le carton.', 'info');
+      bip(true);
+      return;
+    }
+
+    /* 2. Une pièce VENDUE. Le cas qui justifie à lui seul le scan : elle a quitté le
+          stock, elle est partie sous le bras d'un client (ou la vente a été saisie à
+          tort). L'envoyer en dépôt écrirait un bon sur une pièce qui n'existe plus. */
+    var vendue = trouverParCode(donnees.vendues, code);
+    if (vendue) {
+      signalerScan('⚠ « ' + designation(vendue.famille, vendue) + ' » est VENDUE ('
+        + (vendue.vendue || 'date inconnue') + ') : elle ne peut pas partir en dépôt. '
+        + 'Si elle est bien là, la vente est à corriger au classeur.', 'err');
+      bip(false); vibrer([80, 60, 80]);
+      return;
+    }
+
+    /* 3. Dans le stock : le cas normal. */
+    var l = trouverParCode(donnees.lignes, code);
+    if (!l) {
+      signalerScan('✕ Code « ' + code + ' » inconnu du stock. Étiquette d\'une fiche '
+        + 'supprimée, ou autre QR que les nôtres.', 'err');
+      bip(false);
+      return;
+    }
+
+    if (l.type === TYPE_SERIE) return ajouterSerie(l);
+    return ajouterUnique(l);
+  }
+
+  function ajouterUnique(l) {
+    var nom = designation(l.famille, l);
+    var entree = {
+      id: l.id, famille: l.famille, designation: nom, prix: Number(l.prix) || 0,
+      type: l.type, depotOrigine: l.depot, quantite: 1, depart: ''
+    };
+    carton.push(entree);
+    enregistrerCarton();
+    rendreCarton(entree.id);
+
+    /* Déjà annoncée à destination : ce n'est pas une erreur — un envoi complémentaire
+       existe, et la date sera simplement remise à celle du jour. Mais c'est assez
+       inhabituel pour être dit. */
+    if (l.depot === choix.depot) {
+      signalerScan('✓ ' + nom + ' — mais le registre l\'annonçait DÉJÀ à '
+        + choix.depot + '. Sa date de dépôt passera au ' + dateFr(choix.date) + '.', 'alerte');
+      bip(true); vibrer(40);
+      return;
+    }
+    signalerScan('✓ ' + nom + ' (' + (l.depot || 'sans dépôt') + ' → ' + choix.depot + ')', 'ok');
+    bip(true); vibrer(40);
+  }
+
+  function ajouterSerie(l) {
+    var nom = designation(l.famille, l);
+    /* Le départ est celui choisi à l'écran 1, et la quantité disponible se lit sur la
+       ligne d'inventaire de CE dépôt. Scanner un socle rangé à l'atelier alors que le
+       départ est réglé sur LAM n'aurait aucun sens — on le dit plutôt que de retirer
+       d'un stock qui n'est pas celui qu'on a sous la main. */
+    var auDepart = (donnees.lignes || []).filter(function(x) {
+      return normaliserCode(x.id) === normaliserCode(l.id) && x.depot === choix.departSerie;
+    })[0];
+
+    if (!auDepart) {
+      signalerScan('⚠ « ' + nom + ' » est un modèle en série, et il n\'en reste aucun à '
+        + choix.departSerie + ' — le dépôt de départ choisi. Changez-le, ou corrigez '
+        + 'les quantités au classeur.', 'alerte');
+      bip(false); vibrer([80, 60, 80]);
+      return;
+    }
+
+    var entree = {
+      id: l.id, famille: l.famille, designation: nom, prix: Number(l.prix) || 0,
+      type: TYPE_SERIE, depotOrigine: choix.departSerie, quantite: 1,
+      depart: choix.departSerie, disponible: Number(auDepart.quantite) || 0
+    };
+    carton.push(entree);
+    enregistrerCarton();
+    rendreCarton(entree.id);
+    signalerScan('✓ ' + nom + ' — en série : réglez la quantité avec + et −. '
+      + entree.disponible + ' à ' + choix.departSerie + '.', 'info');
+    bip(true); vibrer(40);
+  }
+
+  /* La quantité ne peut pas dépasser ce qui reste au départ. C'est un CONFORT : le
+     serveur recalcule sous verrou et refuse de toute façon (il peut s'en être vendu un
+     entre-temps). Une vérification posée ici seulement finirait par être prise pour la
+     garde, et le jour où les deux divergent on perdrait l'avertissement, jamais la
+     protection. */
+  function ajusterQuantite(entree, delta, silencieux) {
+    var voulue = entree.quantite + delta;
+    if (voulue < 1) { retirer(entree.id); return false; }
+    if (entree.disponible !== undefined && voulue > entree.disponible) {
+      if (!silencieux) {
+        signalerScan('⚠ Il n\'en reste que ' + entree.disponible + ' à ' + entree.depart
+          + ' d\'après le registre.', 'alerte');
+      } else {
+        signalerScan('⚠ « ' + entree.designation + ' » : ' + entree.disponible
+          + ' seulement à ' + entree.depart + ', la quantité reste à ' + entree.quantite + '.', 'alerte');
+      }
+      bip(false);
+      return false;
+    }
+    entree.quantite = voulue;
+    enregistrerCarton();
+    rendreCarton();
+    return true;
+  }
+
+  function retirer(id) {
+    var cible = normaliserCode(id);
+    carton = carton.filter(function(e) { return normaliserCode(e.id) !== cible; });
+    enregistrerCarton();
+    rendreCarton();
+    if (!carton.length) signalerScan('Carton vide.', 'info');
+  }
+
+  /* ══ Rendu du carton ══════════════════════════════════════════════════════ */
+  function rendreCarton(idNeuf) {
+    var el = document.getElementById('carton');
+    if (!carton.length) {
+      el.innerHTML = '<div class="vide">Le carton est vide.<br>'
+        + 'Touchez « Scanner » et visez les étiquettes QR des pièces que vous emballez.</div>';
+      majPied();
+      return;
+    }
+
+    /* La dernière scannée en TÊTE : c'est celle qu'on vient de poser, et c'est elle
+       qu'on veut voir sans faire défiler quand le carton se remplit. */
+    el.innerHTML = carton.slice().reverse().map(function(e) {
+      var serie = e.type === TYPE_SERIE;
+      return '<div class="piece' + (normaliserCode(e.id) === normaliserCode(idNeuf || '') ? ' neuve' : '') + '">'
+        + '<div class="corps">'
+        + '<div class="nom">' + echapper(e.designation) + '</div>'
+        + '<div class="meta">' + echapper(e.famille) + ' · <code>' + echapper(e.id) + '</code> · '
+        + (serie
+            ? 'retiré de ' + echapper(e.depart)
+              + (e.disponible !== undefined ? ' (' + e.disponible + ' en stock)' : '')
+            : echapper(e.depotOrigine || 'sans dépôt') + ' → ' + echapper(choix.depot))
+        + '</div></div>'
+        + (serie
+            ? '<div class="qte">'
+              + '<button type="button" data-moins="' + echapper(e.id) + '">−</button>'
+              + '<span class="valeur">' + e.quantite + '</span>'
+              + '<button type="button" data-plus="' + echapper(e.id) + '">+</button></div>'
+            : '')
+        + '<div class="prix">' + euros(e.prix * e.quantite) + '</div>'
+        + '<button type="button" class="retirer" data-retirer="' + echapper(e.id) + '" '
+        + 'aria-label="Retirer du carton">✕</button>'
+        + '</div>';
+    }).join('');
+
+    el.querySelectorAll('[data-retirer]').forEach(function(b) {
+      b.onclick = function() { retirer(b.getAttribute('data-retirer')); };
+    });
+    el.querySelectorAll('[data-plus]').forEach(function(b) {
+      b.onclick = function() { ajusterQuantite(dansCarton(b.getAttribute('data-plus')), +1); };
+    });
+    el.querySelectorAll('[data-moins]').forEach(function(b) {
+      b.onclick = function() { ajusterQuantite(dansCarton(b.getAttribute('data-moins')), -1); };
+    });
+
+    majPied();
+  }
+
+  /* ARTICLE n'est pas PIÈCE : un modèle en série à 3 exemplaires est UN article remis et
+     TROIS pièces en rayon. Les deux sont annoncés, jamais l'un sans l'autre — un écart
+     entre les deux nombres a déjà fait croire à une perte le 01/10. */
+  function resume(liste) {
+    var articles = liste.length;
+    var pieces = liste.reduce(function(t, e) { return t + (Number(e.quantite) || 0); }, 0);
+    var texte = articles + (articles > 1 ? ' articles' : ' article');
+    if (pieces !== articles) texte += ', ' + pieces + (pieces > 1 ? ' pièces' : ' pièce');
+    return texte;
+  }
+
+  function majPied() {
+    var valeur = carton.reduce(function(t, e) {
+      return t + (Number(e.prix) || 0) * (Number(e.quantite) || 0);
+    }, 0);
+    document.getElementById('compte').innerHTML = carton.length
+      ? '<strong>' + resume(carton) + '</strong> · ' + euros(valeur) + '<br>'
+        + echapper(choix.depot) + ', au ' + echapper(dateFr(choix.date))
+      : 'Rien dans le carton.';
+    document.getElementById('btnEcrire').disabled = !carton.length;
+  }
+
+  /* ══ Écriture ═════════════════════════════════════════════════════════════ */
+  document.getElementById('btnEcrire').onclick = function() {
+    if (!carton.length) return;
+    var bouton = this;
+    var cle = cleAcces(false);
+    if (!cle) return;
+
+    bouton.disabled = true;
+    bouton.textContent = 'Écriture…';
+    cacherBandeau();
+    if (scanActif) arreterScan();
+
+    appelApi('enregistrerEnvoi', cle, {
+      idEnvoi: idEnvoi,
+      depot: choix.depot,
+      date: choix.date,
+      pieces: carton.map(function(e) {
+        return { id: e.id, quantite: e.quantite, depart: e.depart };
+      })
+    }).then(function(r) {
+      bouton.disabled = false;
+      bouton.textContent = 'Enregistrer';
+      rendreBilan(r);
+    }).catch(function(err) {
+      bouton.disabled = false;
+      bouton.textContent = 'Enregistrer';
+      if (err && err.authRefusee) {
+        bandeau("Clé d'accès refusée", 'Le carton est intact. Saisissez la clé et '
+          + 'réessayez.', 'err', 'Saisir la clé', function() { cleAcces(true); cacherBandeau(); });
+        return;
+      }
+      /* Le carton n'est PAS vidé : l'`idEnvoi` est conservé, donc une retentative ne
+         peut pas déplacer deux fois les mêmes pièces même si la première écriture a
+         abouti côté serveur sans que la réponse revienne. */
+      bandeau('L\'envoi n\'a pas pu être enregistré',
+        'Le carton est intact, rien n\'est perdu. Réessayez quand le réseau revient : '
+        + 'l\'envoi porte un identifiant, il ne peut pas être écrit deux fois.'
+        + '<br>Détail : <code>' + echapper((err && err.message) || 'réseau') + '</code>',
+        'err', 'Réessayer maintenant', function() {
+          cacherBandeau();
+          document.getElementById('btnEcrire').click();
+        });
+    });
+  };
+
+  /* ══ Écran 3 — ce qui a été écrit, puis le bon ════════════════════════════ */
+  function rendreBilan(r) {
+    var el = document.getElementById('ecranBilan');
+    var blocs = [];
+
+    if (r.ok) {
+      blocs.push('<div class="bandeau ok"><div class="titre">Envoi enregistré</div>'
+        + echapper(resumeServeur(r)) + ' pour <strong>' + echapper(r.depot)
+        + '</strong>, au ' + echapper(dateFr(r.date)) + ', pour ' + euros(r.valeur) + '.<br>'
+        + 'Le dépôt et la date sont écrits sur chaque pièce, et le journal « '
+        + echapper(r.journal) + ' » en garde la trace.</div>');
+    } else {
+      blocs.push('<div class="bandeau err"><div class="titre">Rien n\'a été écrit</div>'
+        + echapper(r.message || 'Le registre a tout refusé.') + '</div>');
+    }
+
+    /* Les refus AVANT le bouton du bon : c'est ce qu'il faut avoir lu avant de faire
+       signer un document. Un bon amputé d'une pièce qu'on croyait dedans se découvre
+       sinon à la réception, de l'autre côté de la France. */
+    if ((r.refusees || []).length) {
+      blocs.push('<div class="bandeau alerte"><div class="titre">'
+        + r.refusees.length + (r.refusees.length > 1 ? ' pièces refusées' : ' pièce refusée')
+        + ' — à vérifier AVANT de faire signer</div>'
+        + '<ul class="liste-motifs">'
+        + r.refusees.map(function(x) {
+            return '<li>' + echapper(x.designation || x.id) + ' — ' + echapper(x.motif) + '</li>';
+          }).join('')
+        + '</ul>Elles ne figureront pas sur le bon.</div>');
+    }
+
+    if ((r.dejaEnPlace || []).length) {
+      blocs.push('<div class="bandeau alerte"><div class="titre">'
+        + r.dejaEnPlace.length + ' déjà enregistrée' + (r.dejaEnPlace.length > 1 ? 's' : '')
+        + ' pour cet envoi</div>'
+        + echapper(r.dejaEnPlace.map(function(x) { return x.designation || x.id; }).join(', '))
+        + ' — rien à réécrire. Ces pièces figureront bien sur le bon.</div>');
+    }
+
+    if ((r.anomalies || []).length) {
+      blocs.push('<div class="bandeau alerte"><div class="titre">À regarder au classeur</div>'
+        + '<ul class="liste-motifs">'
+        + r.anomalies.map(function(a) { return '<li>' + echapper(a) + '</li>'; }).join('')
+        + '</ul></div>');
+    }
+
+    if (r.dashboard === false) {
+      blocs.push('<div class="bandeau alerte"><div class="titre">Dashboard non actualisé</div>'
+        + 'L\'envoi, lui, est bien écrit. Le Dashboard se remettra à jour au prochain '
+        + 'passage.</div>');
+    }
+
+    /* Le bon : on y va par l'inventaire, pré-filtré sur ce dépôt et cette date. C'est la
+       page qui dessine le bon, et il n'y en a qu'une (G18). */
+    if (r.ok || (r.dejaEnPlace || []).length) {
+      blocs.push('<div class="carte">'
+        + '<div class="sous" style="margin-bottom:12px">Le bon de dépôt se sort depuis '
+        + 'l\'inventaire, déjà filtré sur ' + echapper(r.depot) + ' au '
+        + echapper(dateFr(r.date)) + '. Sur place : « Faire signer ». Pour un colis : '
+        + '« Envoyer sans signature », le bon part par email pour être signé à '
+        + 'réception.</div>'
+        + '<button class="principal" id="btnBon">Sortir le bon de dépôt</button>'
+        + '<div style="height:10px"></div>'
+        + '<button class="secondaire" id="btnNouveau" style="width:100%">Préparer un autre envoi</button>'
+        + '</div>');
+    } else {
+      blocs.push('<div class="carte">'
+        + '<button class="secondaire" id="btnReprendre" style="width:100%">Revenir au carton</button>'
+        + '</div>');
+    }
+
+    el.innerHTML = blocs.join('');
+    montrer('ecranBilan');
+
+    var btnBon = document.getElementById('btnBon');
+    if (btnBon) {
+      btnBon.onclick = function() {
+        window.open(urlApi() + '?inventaire&bon=1'
+          + '&depot=' + encodeURIComponent(r.depot)
+          + '&date=' + encodeURIComponent(r.date), '_blank');
+      };
+    }
+    var btnNouveau = document.getElementById('btnNouveau');
+    if (btnNouveau) {
+      btnNouveau.onclick = function() {
+        /* Le carton n'est oublié QU'ICI, une fois l'écriture constatée à l'écran. Le
+           vider dès la réponse du serveur ferait perdre la liste au moindre doute. */
+        oublierCarton();
+        cacherBandeau();
+        charger(false);
+      };
+    }
+    var btnReprendre = document.getElementById('btnReprendre');
+    if (btnReprendre) {
+      btnReprendre.onclick = function() { cacherBandeau(); montrer('ecranScan'); rendreCarton(); };
+    }
+  }
+
+  function resumeServeur(r) {
+    var texte = r.articles + (r.articles > 1 ? ' articles' : ' article');
+    if (r.pieces !== r.articles) texte += ', ' + r.pieces + (r.pieces > 1 ? ' pièces' : ' pièce');
+    return texte;
+  }
+
+  /* ══ Caméra ═══════════════════════════════════════════════════════════════ */
+  document.getElementById('btnScan').onclick = function() {
+    if (scanActif) arreterScan(); else demarrerScan();
+  };
+
+  function demarrerScan() {
+    if (typeof Html5Qrcode === 'undefined') {
+      signalerScan('Le lecteur de QR n\'a pas pu se charger. Rechargez la page avec du réseau.', 'err');
+      return;
+    }
+    var zone = document.getElementById('lecteur');
+    zone.classList.add('actif');
+    lecteur = new Html5Qrcode('lecteur', { formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE] });
+    var config = {
+      fps: 10,
+      aspectRatio: 2,
+      qrbox: function(largeur, hauteur) {
+        var cote = Math.max(50, Math.floor(Math.min(largeur, hauteur) * 0.8));
+        return { width: cote, height: cote };
+      }
+    };
+    /* Caméra arrière demandée par son RÔLE : les libellés ne sont connus qu'après une
+       première autorisation, et varient d'un téléphone à l'autre. */
+    lecteur.start({ facingMode: 'environment' }, config, traiterScan).then(function() {
+      scanActif = true;
+      var btn = document.getElementById('btnScan');
+      btn.classList.add('actif');
+      btn.textContent = '✕ Caméra';
+      signalerScan('Visez une étiquette.', 'info');
+    }).catch(function(err) {
+      zone.classList.remove('actif');
+      signalerScan('Impossible d\'ouvrir la caméra : ' + err, 'err');
+    });
+  }
+
+  function arreterScan() {
+    if (lecteur && scanActif) {
+      lecteur.stop().then(function() { lecteur.clear(); finaliserArretScan(); })
+        .catch(finaliserArretScan);
+    } else {
+      finaliserArretScan();
+    }
+  }
+
+  function finaliserArretScan() {
+    scanActif = false;
+    document.getElementById('lecteur').classList.remove('actif');
+    var btn = document.getElementById('btnScan');
+    btn.classList.remove('actif');
+    btn.textContent = '📷 Scanner';
+  }
+
+  function signalerScan(texte, genre) {
+    var el = document.getElementById('retourScan');
+    el.className = 'retour-scan visible ' + (genre || 'info');
+    el.textContent = texte;
+  }
+
+  /* ══ Outils ═══════════════════════════════════════════════════════════════ */
+  var sonnerie = null;
+
+  function bip(succes) {
+    try {
+      if (!sonnerie) sonnerie = new (window.AudioContext || window.webkitAudioContext)();
+      var o = sonnerie.createOscillator();
+      var g = sonnerie.createGain();
+      o.connect(g); g.connect(sonnerie.destination);
+      o.frequency.value = succes ? 880 : 300;
+      g.gain.value = 0.08;
+      o.start();
+      o.stop(sonnerie.currentTime + (succes ? 0.08 : 0.22));
+    } catch (e) {}
+  }
+
+  function vibrer(motif) {
+    try { if (navigator.vibrate) navigator.vibrate(motif); } catch (e) {}
+  }
+
+  /* Le nom d'une pièce, comme partout ailleurs : une seconde formule aurait fini par
+     nommer différemment la même pièce, et le bilan ne se recouperait plus avec l'écran. */
+  function designation(famille, ligne) {
+    return valeurColonne(famille, ligne, 'Désignation') || ligne.id || '(sans désignation)';
+  }
+
+  function valeurColonne(famille, ligne, nomColonne) {
+    var colonnes = ((donnees && donnees.colonnesParFamille) || {})[famille] || [];
+    var i = colonnes.indexOf(nomColonne);
+    if (i === -1) return '';
+    var v = ligne.valeurs[i];
+    return v === undefined || v === null ? '' : String(v);
+  }
+
+  function dateFr(iso) {
+    var m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? m[3] + '/' + m[2] + '/' + m[1] : String(iso || '');
+  }
+
+  function euros(montant) {
+    var n = Number(montant) || 0;
+    return n.toFixed(2).replace('.', ',') + ' €';
+  }
+
+  function echapper(texte) {
+    return String(texte === null || texte === undefined ? '' : texte)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  /* ══ Départ ═══════════════════════════════════════════════════════════════ */
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('sw.js').catch(function() {});
+    });
+  }
+
+  charger(false);
+</script>
+</body>
+</html>

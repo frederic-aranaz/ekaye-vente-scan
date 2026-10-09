@@ -11,7 +11,7 @@
    remplacés, et les téléphones qui ont déjà installé la page gardent l'ancienne
    version indéfiniment. C'est la seule ligne à ne jamais oublier de toucher.
    ───────────────────────────────────────────────────────────────────────────── */
-const VERSION = 'v5';   // v5 : bandeau des chiffres périmés sur le pointage (03/10/2026)
+const VERSION = 'v6';   // v6 : page d'envoi en dépôt constituée au scan (09/10/2026)
 const CACHE = 'ekaye-vente-' + VERSION;
 
 /* Tout ce qu'il faut pour qu'un démarrage à froid sans réseau donne une page
@@ -23,6 +23,7 @@ const RESSOURCES = [
   './',
   './index.html',
   './pointage.html',
+  './envoi.html',
   './html5-qrcode.min.js',
   './banniere.jpg',
   './manifest.webmanifest',
