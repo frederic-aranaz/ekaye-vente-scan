@@ -395,6 +395,7 @@
     <div>
       <h1>Registre de vente EKAYE</h1>
       <div class="topbar-sub">Scan QR + saisie manuelle — Libourne</div>
+      <div class="topbar-sub" id="version">Page v10</div>
     </div>
   </div>
 
@@ -595,6 +596,11 @@
   /* ── Configuration API ──────────────────────────────────────────────── */
   // URL /exec du déploiement Apps Script (pointe toujours vers la dernière version
   // publiée). Modifiable sur l'appareil via le réglage technique en bas de page.
+  // Version de CETTE page — la même que VERSION dans sw.js, à incrémenter
+  // ensemble (le banc serveur le vérifie). Affichée sous le titre avec celle du
+  // registre, pour voir si le téléphone a bien quitté l'ancienne page.
+  var VERSION_PAGE = 'v10';
+
   var URL_API_DEFAUT = 'https://script.google.com/macros/s/AKfycbwl4wyUyxOyrWVtXVvjoS-7LMqAULNaNBCAUdBZxRYTlFF3OVkjE0mWifOiG6oqK_h5Xg/exec';
 
   function urlApi() {
@@ -793,7 +799,7 @@
   var listes = { pointsDeVente: [], modesPaiement: [], familles: [], stock: [] };
   var compteurArticle = 0;
   var modesActifs = {};
-  var iconesModes = { 'CB': '💳', 'Espèces': '💵', 'Chèque': '📝', 'Stripe': '🌐', 'PayPal': '🅿️' };
+  var iconesModes = { 'CB': '💳', 'Espèces': '💵', 'Chèque': '📝', 'Stripe': '🌐', 'PayPal': '🅿️', 'Qonto': '🏦' };
 
   /* ── Point de vente ── */
   // Le stock déposé "Expo" (dépôt générique) doit rester visible même quand la vente
@@ -1894,6 +1900,8 @@
 
   function afficherFormulaire(data) {
     listes = data;
+    document.getElementById('version').textContent = 'Page ' + VERSION_PAGE
+      + (data.versionRegistre ? ' · Registre @' + data.versionRegistre : '');
     document.getElementById('chargement').style.display = 'none';
     document.getElementById('formulaire').style.display = 'flex';
     remplirSelectPointDeVente(document.getElementById('pointDeVente'));

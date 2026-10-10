@@ -11,7 +11,8 @@
    remplacés, et les téléphones qui ont déjà installé la page gardent l'ancienne
    version indéfiniment. C'est la seule ligne à ne jamais oublier de toucher.
    ───────────────────────────────────────────────────────────────────────────── */
-const VERSION = 'v9';   // v9 : saisie a la main en plus du scan (10/10/2026)
+const VERSION = 'v10';  // v10 : moyen de paiement Qonto (10/10/2026)
+// v9 : saisie a la main en plus du scan (10/10/2026)
 /* v8 : un carton deja ecrit rouvre son bilan, pas sa coche (09/10/2026). */
 /* v7 : annulation d'un envoi depuis le bilan (09/10/2026). */
 /* v6 : page d'envoi en dépôt constituée au scan (09/10/2026). */
