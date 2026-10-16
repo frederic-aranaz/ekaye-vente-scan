@@ -70,6 +70,17 @@
     }
     .topbar h1  { font-size: 15px; font-weight: 600; color: #e8d8b0; margin: 0; letter-spacing: 0.01em; }
     .topbar-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+    /* Lien vers le classeur, à droite du titre. `margin-left: auto` plutôt
+       qu'une largeur fixe : le bloc du titre garde toute la place dont il a
+       besoin, le lien se cale au bord quelle que soit la largeur du téléphone. */
+    .topbar-classeur {
+      margin-left: auto; flex-shrink: 0;
+      padding: 6px 10px; border-radius: 6px;
+      font-size: 11px; font-weight: 600; text-decoration: none;
+      color: #e8d8b0; background: rgba(226,169,90,0.15);
+      border: 1px solid rgba(226,169,90,0.3);
+    }
+    .topbar-classeur:active { background: rgba(226,169,90,0.28); }
 
     /* ── Layout ── */
     .body { padding: 1.25rem 1rem 2.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
@@ -395,8 +406,10 @@
     <div>
       <h1>Registre de vente EKAYE</h1>
       <div class="topbar-sub">Scan QR + saisie manuelle — Libourne</div>
-      <div class="topbar-sub" id="version">Page v10</div>
+      <div class="topbar-sub" id="version">Page v11</div>
     </div>
+    <a class="topbar-classeur" href="https://docs.google.com/spreadsheets/d/133qMwB3oH7jza0HkwVxhwpSKtkdeGH2ZUF0WbnR3enk/edit"
+       target="_blank" rel="noopener">Classeur</a>
   </div>
 
   <div class="body">
@@ -417,7 +430,7 @@
           <span class="fi">🏪</span>
           <div class="fb">
             <div class="fl">Point de vente *</div>
-            <select id="pointDeVente" class="fv" onchange="basculerPointLibre(); actualiserStockTousLesArticles();"></select>
+            <select id="pointDeVente" class="fv" onchange="basculerPointLibre(); actualiserStockTousLesArticles(); recalculerTotal();"></select>
           </div>
         </div>
         <div class="fr pdv-libre" id="rowPointLibre">
@@ -599,7 +612,7 @@
   // Version de CETTE page — la même que VERSION dans sw.js, à incrémenter
   // ensemble (le banc serveur le vérifie). Affichée sous le titre avec celle du
   // registre, pour voir si le téléphone a bien quitté l'ancienne page.
-  var VERSION_PAGE = 'v10';
+  var VERSION_PAGE = 'v11';
 
   var URL_API_DEFAUT = 'https://script.google.com/macros/s/AKfycbwl4wyUyxOyrWVtXVvjoS-7LMqAULNaNBCAUdBZxRYTlFF3OVkjE0mWifOiG6oqK_h5Xg/exec';
 
@@ -1342,6 +1355,19 @@
     return lignes;
   }
 
+  // Le barème dépend du mode ET du point de vente : chez Les Audacieuses, la
+  // carte passe par leur terminal. Comme le barème ordinaire, la surcharge vient
+  // du serveur (`listes.fraisPaiementParPoint`) et n'est pas recopiée ici — un
+  // taux écrit des deux côtés finirait par diverger en silence (G18).
+  // Le nom comparé sort de la liste déroulante, que le serveur a lui-même
+  // remplie : l'égalité stricte suffit ici, là où le serveur, qui relit aussi des
+  // libellés tapés à la main, compare de façon tolérante.
+  function baremeDuMode(mode) {
+    var parPoint = (listes.fraisPaiementParPoint || {})[pointDeVenteActuel()];
+    if (parPoint && parPoint[mode]) return parPoint[mode];
+    return (listes.fraisPaiement || {})[mode];
+  }
+
   function recalculerTotal() {
     var lignes = calculerLignes();
     var total = arrondi2(lignes.reduce(function(s, l) { return s + l.montant; }, 0));
@@ -1362,7 +1388,7 @@
     // (Stripe : 1,5 % + 0,25 €). La part fixe se compte une fois, pas par article.
     var fraisParMode = [];
     listes.modesPaiement.forEach(function(mode) {
-      var bareme = (listes.fraisPaiement || {})[mode];
+      var bareme = baremeDuMode(mode);
       if (!bareme) return;
       if (!bareme.taux && !bareme.fixe) return;
       var slug = slugMode(mode);
