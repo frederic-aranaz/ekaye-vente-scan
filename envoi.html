@@ -190,6 +190,12 @@
       partent de là où le registre les attend, quel qu'il soit.</span>
   </label>
   <button class="principal" id="btnCommencer">Commencer à scanner</button>
+  <!-- Le geste inverse. Il n'a besoin NI de destination NI de date : on ne décide pas
+       où une pièce va, on constate qu'elle n'y est pas allée, et elle repart d'où
+       l'envoi l'avait prise. C'est pour ça qu'il est SOUS le bouton principal et non
+       dans un écran à lui : même carton, même scanner, autre sens. -->
+  <button class="secondaire" id="btnRetrait" style="width:100%;margin-top:10px">
+    Retirer des pièces d'un envoi</button>
 </section>
 
 <!-- ÉCRAN 2 — le carton -->
@@ -250,6 +256,10 @@
   var dernierScan = { code: null, temps: 0 };
   var idEnvoi = null;       /* fixé à la PREMIÈRE tentative, réutilisé sur toute retentative */
   var cartonEcrit = null;   /* la réponse du serveur, une fois l'envoi abouti */
+  /* 'envoi' : on remplit un carton. 'retrait' : on scanne ce qui n'est PAS dedans,
+     pour le faire revenir. Même écran, même scanner, même liste — ne changent que les
+     règles d'acceptation et ce que fait le bouton du bas. */
+  var mode = 'envoi';
 
   /* ══ Clé d'accès et API — à l'identique du pointage ═══════════════════════ */
   function cleAcces(redemander) {
@@ -396,6 +406,7 @@
       return;
     }
     cacherBandeau();
+    quitterRetrait();
     /* Un identifiant par carton, fixé ici : il rend l'écriture rejouable sans jamais
        déplacer deux fois les mêmes pièces, même si le réseau fait croire à un échec. */
     idEnvoi = idUnique();
@@ -404,8 +415,33 @@
     rendreCarton();
   };
 
+  /* Entrer et sortir du retrait passent par ici, et nulle part ailleurs : le mode, la
+     liste et le libellé du bouton du bas doivent bouger ensemble. Séparés, on finit
+     avec un bouton « Enregistrer » qui retire, ce qui ne se rattrape pas. */
+  function entrerEnRetrait() {
+    mode = 'retrait';
+    carton = [];
+    idEnvoi = null;
+    document.getElementById('btnEcrire').textContent = 'Retirer du dépôt';
+  }
+
+  function quitterRetrait() {
+    if (mode !== 'retrait') return;
+    mode = 'envoi';
+    carton = [];
+    document.getElementById('btnEcrire').textContent = 'Enregistrer';
+  }
+
+  document.getElementById('btnRetrait').onclick = function() {
+    cacherBandeau();
+    entrerEnRetrait();
+    montrer('ecranScan');
+    rendreCarton();
+  };
+
   document.getElementById('btnRetourPrepa').onclick = function() {
     cacherBandeau();
+    quitterRetrait();
     montrer('ecranPrepa');
   };
 
@@ -425,6 +461,9 @@
      écrire, et la page affichait « Envoi enregistré » pour une pièce qui n'y était pas.
      L'idempotence protégeait les données et fabriquait un faux compte rendu. */
   function enregistrerCarton() {
+    /* Une liste de retrait ne vaut que devant le carton ouvert. Mémorisée, elle
+       reviendrait à la réouverture sous les traits d'un envoi à écrire. */
+    if (mode === 'retrait') return;
     try {
       localStorage.setItem(CARTON_STOCKAGE, JSON.stringify({
         choix: choix, carton: carton, idEnvoi: idEnvoi, quand: Date.now(),
@@ -437,6 +476,7 @@
     carton = [];
     idEnvoi = null;
     cartonEcrit = null;
+    quitterRetrait();
     try { localStorage.removeItem(CARTON_STOCKAGE); } catch (e) {}
   }
 
@@ -540,13 +580,17 @@
           pose un deuxième socle identique ; une pièce unique, non, elle est unique. */
     var presente = dansCarton(code);
     if (presente) {
-      if (presente.type === TYPE_SERIE) {
+      /* En retrait, pas d'incrément : ce qui revient, c'est la LIGNE de journal, avec
+         la quantité qu'elle porte. Compter les exemplaires un à un laisserait croire
+         qu'on peut en rendre deux sur trois, ce que le serveur ne sait pas faire. */
+      if (presente.type === TYPE_SERIE && mode !== 'retrait') {
         if (!ajusterQuantite(presente, +1, true)) return;
         signalerScan('✓ ' + presente.designation + ' — ' + presente.quantite + ' exemplaires', 'ok');
         bip(true); vibrer(40);
         return;
       }
-      signalerScan('« ' + presente.designation + ' » est déjà dans le carton.', 'info');
+      signalerScan('« ' + presente.designation + ' » est déjà dans '
+        + (mode === 'retrait' ? 'la liste à retirer.' : 'le carton.'), 'info');
       bip(true);
       return;
     }
@@ -557,7 +601,10 @@
     var vendue = trouverParCode(donnees.vendues, code);
     if (vendue) {
       signalerScan('⚠ « ' + designation(vendue.famille, vendue) + ' » est VENDUE ('
-        + (vendue.vendue || 'date inconnue') + ') : elle ne peut pas partir en dépôt. '
+        + (vendue.vendue || 'date inconnue') + ') : '
+        + (mode === 'retrait'
+            ? 'elle n\'est plus en stock, il n\'y a rien à faire revenir. '
+            : 'elle ne peut pas partir en dépôt. ')
         + 'Si elle est bien là, la vente est à corriger au classeur.', 'err');
       bip(false); vibrer([80, 60, 80]);
       return;
@@ -572,8 +619,34 @@
       return;
     }
 
+    if (mode === 'retrait') return retirerDuDepot(l);
     if (l.type === TYPE_SERIE) return ajouterSerie(l);
     return ajouterUnique(l);
+  }
+
+  /* Le contrôle local est volontairement grossier : une pièce que le registre annonce
+     à l'Atelier n'est sur aucun envoi, c'est certain et c'est immédiat — devant un
+     carton, un refus tout de suite vaut mieux qu'un aller-retour au serveur. Tout le
+     reste est tranché par le serveur, seul à lire le journal, et seul à le lire SOUS
+     VERROU : une pièce déjà retirée par ailleurs doit être refusée au moment d'écrire,
+     pas au moment du scan (G87). */
+  function retirerDuDepot(l) {
+    var nom = designation(l.famille, l);
+    var depot = String(l.depot || '').trim();
+    if (!depot || depot === 'Atelier') {
+      signalerScan('✕ « ' + nom + ' » est ' + (depot ? 'déjà à ' + depot : 'sans dépôt')
+        + ' : elle n\'est partie nulle part, il n\'y a rien à retirer.', 'err');
+      bip(false); vibrer([80, 60, 80]);
+      return;
+    }
+    var entree = {
+      id: l.id, famille: l.famille, designation: nom, prix: Number(l.prix) || 0,
+      type: l.type, depotOrigine: depot, quantite: 1, depart: ''
+    };
+    carton.push(entree);
+    rendreCarton(entree.id);
+    signalerScan('✓ ' + nom + ' — à retirer de ' + depot, 'ok');
+    bip(true); vibrer(40);
   }
 
   function ajouterUnique(l) {
@@ -779,8 +852,12 @@
   function rendreCarton(idNeuf) {
     var el = document.getElementById('carton');
     if (!carton.length) {
-      el.innerHTML = '<div class="vide">Le carton est vide.<br>'
-        + 'Touchez « Scanner » et visez les étiquettes QR des pièces que vous emballez.</div>';
+      el.innerHTML = mode === 'retrait'
+        ? '<div class="vide">Aucune pièce à retirer.<br>'
+          + 'Touchez « Scanner » et visez les étiquettes QR des pièces qui ne sont PAS '
+          + 'dans le carton.</div>'
+        : '<div class="vide">Le carton est vide.<br>'
+          + 'Touchez « Scanner » et visez les étiquettes QR des pièces que vous emballez.</div>';
       majPied();
       return;
     }
@@ -796,7 +873,9 @@
         + (serie
             ? 'retiré de ' + echapper(e.depart)
               + (e.disponible !== undefined ? ' (' + e.disponible + ' en stock)' : '')
-            : echapper(e.depotOrigine || 'sans dépôt') + ' → ' + echapper(choix.depot))
+            : (mode === 'retrait'
+                ? 'à retirer de ' + echapper(e.depotOrigine)
+                : echapper(e.depotOrigine || 'sans dépôt') + ' → ' + echapper(choix.depot)))
         + '</div></div>'
         + (serie
             ? '<div class="qte">'
@@ -838,6 +917,14 @@
     var valeur = carton.reduce(function(t, e) {
       return t + (Number(e.prix) || 0) * (Number(e.quantite) || 0);
     }, 0);
+    if (mode === 'retrait') {
+      document.getElementById('compte').innerHTML = carton.length
+        ? '<strong>' + resume(carton) + '</strong> · ' + euros(valeur) + '<br>'
+          + 'à retirer du dépôt — chaque pièce repart d\'où l\'envoi l\'avait prise'
+        : 'Rien à retirer.';
+      document.getElementById('btnEcrire').disabled = !carton.length;
+      return;
+    }
     document.getElementById('compte').innerHTML = carton.length
       ? '<strong>' + resume(carton) + '</strong> · ' + euros(valeur) + '<br>'
         + echapper(choix.depot) + ', au ' + echapper(dateFr(choix.date))
@@ -848,6 +935,7 @@
   /* ══ Écriture ═════════════════════════════════════════════════════════════ */
   document.getElementById('btnEcrire').onclick = function() {
     if (!carton.length) return;
+    if (mode === 'retrait') return retirerLesPieces(this);
     var bouton = this;
     var cle = cleAcces(false);
     if (!cle) return;
@@ -892,6 +980,48 @@
         });
     });
   };
+
+  /* Le retrait n'emporte PAS d'identifiant de geste, et il n'en a pas besoin : une
+     seconde tentative ne retrouve plus les lignes, déjà marquées « Annulé le », et
+     s'achève sur un refus. L'idempotence vient ici de la marque elle-même — ce qui
+     n'est vrai que depuis que la colonne existe au classeur. Sans elle, le serveur le
+     DIT en anomalie, et c'est à prendre au sérieux : une seconde tentative rendrait
+     alors les pièces une seconde fois. */
+  function retirerLesPieces(bouton) {
+    var cle = cleAcces(false);
+    if (!cle) return;
+    if (!window.confirm('Retirer ' + resume(carton) + ' du dépôt ? Chaque pièce '
+      + 'repartira d\'où l\'envoi l\'avait prise.')) return;
+
+    bouton.disabled = true;
+    bouton.textContent = 'Retrait…';
+    cacherBandeau();
+    if (scanActif) arreterScan();
+
+    appelApi('annulerEnvoi', cle, {
+      ids: carton.map(function(e) { return e.id; })
+    }).then(function(a) {
+      bouton.disabled = false;
+      bouton.textContent = 'Retirer du dépôt';
+      rendreBilanAnnulation(a);
+    }).catch(function(err) {
+      bouton.disabled = false;
+      bouton.textContent = 'Retirer du dépôt';
+      if (err && err.authRefusee) {
+        bandeau("Clé d'accès refusée", 'La liste est intacte. Saisissez la clé et '
+          + 'réessayez.', 'err', 'Saisir la clé', function() { cleAcces(true); cacherBandeau(); });
+        return;
+      }
+      bandeau('Le retrait n\'a pas abouti',
+        'Rien n\'a changé à moitié : le serveur écrit tout ou refuse. La liste est '
+        + 'intacte, réessayez quand le réseau revient.'
+        + '<br>Détail : <code>' + echapper((err && err.message) || 'réseau') + '</code>',
+        'err', 'Réessayer', function() {
+          cacherBandeau();
+          document.getElementById('btnEcrire').click();
+        });
+    });
+  }
 
   /* ══ Écran 3 — ce qui a été écrit, puis le bon ════════════════════════════ */
   function rendreBilan(r) {
@@ -1043,7 +1173,8 @@
     var blocs = [];
 
     if (a.ok) {
-      blocs.push('<div class="bandeau ok"><div class="titre">Envoi annulé</div>'
+      blocs.push('<div class="bandeau ok"><div class="titre">'
+        + (a.parPiece ? 'Pièces retirées du dépôt' : 'Envoi annulé') + '</div>'
         + echapper(resumeServeur(a)) + ' rendu' + (a.articles > 1 ? 's' : '')
         + ' à leur dépôt d\'origine.<br>'
         + '<ul class="liste-motifs">'
@@ -1068,6 +1199,15 @@
             return '<li>' + echapper(x.designation || x.id) + ' — ' + echapper(x.motif) + '</li>';
           }).join('')
         + '</ul>Elles sont toujours chez le dépositaire, et figureront toujours sur le bon.</div>');
+    }
+
+    /* Après un retrait, l'envoi N'EST PAS annulé : il reste, plus court. Le dire, sans
+       quoi l'écran se lit comme celui d'une annulation et le bon paraît caduc. */
+    if (a.ok && a.parPiece) {
+      blocs.push('<div class="carte"><strong>L\'envoi tient toujours</strong> pour les '
+        + 'pièces qui n\'ont pas été retirées. Le bon de dépôt est à sortir MAINTENANT, '
+        + 'depuis l\'inventaire du classeur : il ne portera plus que ce qui est '
+        + 'réellement parti.</div>');
     }
 
     if ((a.anomalies || []).length) {
