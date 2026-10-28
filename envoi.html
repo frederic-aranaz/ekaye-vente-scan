@@ -147,6 +147,21 @@
        ferait croire à une faute de frappe. On la propose, le refus l'explique. */
     .resultat.vendue { opacity: .55; border-style: dashed; }
     .resultat.dedans { border-color: rgba(127,176,105,.55); }
+    /* Ce que le registre annonce en dépôt, SOUS la liste de retrait. Le filet sépare
+       deux choses qu'on ne doit pas confondre d'un coup d'œil : au-dessus ce qu'on a
+       décidé d'enlever, au-dessous ce qui est parti et qu'on pointe. */
+    .en-depot { margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px; }
+    .en-depot-titre { font-size: 13px; font-weight: 600; color: var(--text-2); }
+    .en-depot-titre span {
+      display: block; margin-top: 3px;
+      font-size: 11px; font-weight: 400; color: var(--text-3); line-height: 1.5;
+    }
+    /* Le couple dépôt + date, qui fait une livraison : c'est le seul repère qui
+       permette de dire « ce sont bien les douze du 28 ». */
+    .en-depot-groupe {
+      margin-top: 16px; font-size: 11px; font-weight: 600;
+      letter-spacing: .03em; text-transform: uppercase; color: var(--ek-clair);
+    }
 
     /* ── Pied fixe : ce que le carton contient, et le pas suivant ─────────── */
     .pied {
@@ -260,6 +275,11 @@
      pour le faire revenir. Même écran, même scanner, même liste — ne changent que les
      règles d'acceptation et ce que fait le bouton du bas. */
   var mode = 'envoi';
+  /* « Stock au … » est posé une fois au chargement ; la consigne qui le suit, elle,
+     change avec le mode. Les garder dans la même phrase écrite une seule fois a donné
+     un écran qui disait en haut « les pièces que vous mettez dans le colis » et au
+     milieu « celles qui ne sont PAS dans le carton » — deux consignes contraires. */
+  var stockAnnonce = '';
 
   /* ══ Clé d'accès et API — à l'identique du pointage ═══════════════════════ */
   function cleAcces(redemander) {
@@ -340,8 +360,8 @@
 
     appelApi('getEnvoi', cle, null).then(function(data) {
       donnees = data;
-      document.getElementById('sous').textContent = 'Stock au ' + (data.genereLe || '?')
-        + '. Scannez les étiquettes des pièces que vous mettez dans le colis.';
+      stockAnnonce = 'Stock au ' + (data.genereLe || '?');
+      majSousTitre();
       preparerEcranPrepa();
       reprendreCarton();
     }).catch(function(err) {
@@ -418,11 +438,22 @@
   /* Entrer et sortir du retrait passent par ici, et nulle part ailleurs : le mode, la
      liste et le libellé du bouton du bas doivent bouger ensemble. Séparés, on finit
      avec un bouton « Enregistrer » qui retire, ce qui ne se rattrape pas. */
+  function majSousTitre() {
+    if (!stockAnnonce) return;
+    document.getElementById('sous').textContent = stockAnnonce + (mode === 'retrait'
+      ? '. Scannez les étiquettes des pièces qui ne sont PAS dans le colis : elles '
+        + "repartiront d'où l'envoi les avait prises."
+      : '. Scannez les étiquettes des pièces que vous mettez dans le colis.');
+  }
+
   function entrerEnRetrait() {
     mode = 'retrait';
     carton = [];
     idEnvoi = null;
     document.getElementById('btnEcrire').textContent = 'Retirer du dépôt';
+    /* Il n'y a pas de destination à changer dans ce sens-là. */
+    document.getElementById('btnRetourPrepa').textContent = 'Quitter le retrait';
+    majSousTitre();
   }
 
   function quitterRetrait() {
@@ -430,6 +461,8 @@
     mode = 'envoi';
     carton = [];
     document.getElementById('btnEcrire').textContent = 'Enregistrer';
+    document.getElementById('btnRetourPrepa').textContent = 'Changer la destination';
+    majSousTitre();
   }
 
   document.getElementById('btnRetrait').onclick = function() {
@@ -851,20 +884,15 @@
   /* ══ Rendu du carton ══════════════════════════════════════════════════════ */
   function rendreCarton(idNeuf) {
     var el = document.getElementById('carton');
-    if (!carton.length) {
-      el.innerHTML = mode === 'retrait'
-        ? '<div class="vide">Aucune pièce à retirer.<br>'
-          + 'Touchez « Scanner » et visez les étiquettes QR des pièces qui ne sont PAS '
-          + 'dans le carton.</div>'
-        : '<div class="vide">Le carton est vide.<br>'
-          + 'Touchez « Scanner » et visez les étiquettes QR des pièces que vous emballez.</div>';
-      majPied();
-      return;
-    }
+    var vide = mode === 'retrait'
+      ? '<div class="vide">Aucune pièce retirée pour l\'instant.<br>'
+        + 'Touchez une pièce dans la liste ci-dessous, ou scannez son étiquette.</div>'
+      : '<div class="vide">Le carton est vide.<br>'
+        + 'Touchez « Scanner » et visez les étiquettes QR des pièces que vous emballez.</div>';
 
     /* La dernière scannée en TÊTE : c'est celle qu'on vient de poser, et c'est elle
        qu'on veut voir sans faire défiler quand le carton se remplit. */
-    el.innerHTML = carton.slice().reverse().map(function(e) {
+    var liste = !carton.length ? vide : carton.slice().reverse().map(function(e) {
       var serie = e.type === TYPE_SERIE;
       return '<div class="piece' + (normaliserCode(e.id) === normaliserCode(idNeuf || '') ? ' neuve' : '') + '">'
         + '<div class="corps">'
@@ -889,6 +917,14 @@
         + '</div>';
     }).join('');
 
+    /* En retrait, ce qui est en dépôt reste affiché SOUS la liste, pleine ou vide :
+       c'est elle qu'on pointe, et elle ne doit pas disparaître à la première pièce
+       choisie — on vérifie justement qu'on a bien les quatre bonnes. */
+    el.innerHTML = liste + (mode === 'retrait' ? rendreEnDepot() : '');
+
+    el.querySelectorAll('[data-ajouter]').forEach(function(b) {
+      b.onclick = function() { ajouterParCode(b.getAttribute('data-ajouter')); };
+    });
     el.querySelectorAll('[data-retirer]').forEach(function(b) {
       b.onclick = function() { retirer(b.getAttribute('data-retirer')); };
     });
@@ -900,6 +936,74 @@
     });
 
     majPied();
+  }
+
+  /* ── Ce que le registre annonce en dépôt ────────────────────────────────────
+     Demandé devant le carton le 28/10 : retirer EN SCANNANT suppose d'avoir les
+     quatre lampes sous la main, alors que ce qu'on veut d'abord, c'est VOIR ce qui
+     est parti — les douze déjà scannées — et pointer les quatre qui sont restées.
+     Rien n'est demandé au serveur : le dépôt et la date de dépôt sont déjà sur
+     chaque ligne du stock chargé, donc la liste s'affiche sans réseau.
+     Groupée par dépôt ET par date : c'est le couple qui fait une livraison, et
+     c'est sur lui que le bon de dépôt se filtre. */
+  function groupesEnDepot() {
+    var groupes = {};
+    (donnees.lignes || []).forEach(function(l) {
+      var depot = String(l.depot || '').trim();
+      if (!depot || depot === 'Atelier') return;
+      var cle = depot + '|' + (l.dateDepot || '');
+      if (!groupes[cle]) groupes[cle] = { depot: depot, date: l.dateDepot || '', lignes: [] };
+      groupes[cle].lignes.push(l);
+    });
+    /* Le plus récent en tête : c'est l'envoi qu'on vient de faire, donc celui qu'on
+       vérifie. Les dates ISO se comparent comme des chaînes ; une date vide passe
+       en dernier, elle ne désigne aucune livraison. */
+    return Object.keys(groupes).map(function(k) { return groupes[k]; })
+      .sort(function(a, b) {
+        if (a.date === b.date) return a.depot < b.depot ? -1 : 1;
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return a.date < b.date ? 1 : -1;
+      });
+  }
+
+  function rendreEnDepot() {
+    var groupes = groupesEnDepot();
+    if (!groupes.length) {
+      return '<div class="vide">Le registre n\'annonce aucune pièce en dépôt.</div>';
+    }
+    return '<div class="en-depot">'
+      + '<div class="en-depot-titre">Ce que le registre annonce en dépôt<br>'
+      + '<span>Touchez une pièce pour la retirer — celles qui ne sont pas dans le '
+      + 'colis.</span></div>'
+      + groupes.map(function(g) {
+          var pieces = g.lignes.reduce(function(t, l) { return t + (Number(l.quantite) || 0); }, 0);
+          var valeur = g.lignes.reduce(function(t, l) {
+            return t + (Number(l.prix) || 0) * (Number(l.quantite) || 0);
+          }, 0);
+          return '<div class="en-depot-groupe">' + echapper(g.depot)
+            + (g.date ? ' — déposé le ' + echapper(dateFr(g.date)) : ' — sans date de dépôt')
+            + ' · ' + pieces + (pieces > 1 ? ' pièces' : ' pièce')
+            + ' · ' + euros(valeur) + '</div>'
+            + g.lignes.map(ligneEnDepot).join('');
+        }).join('')
+      + '</div>';
+  }
+
+  function ligneEnDepot(l) {
+    var deja = dansCarton(l.id);
+    var serie = l.type === TYPE_SERIE;
+    var quantite = serie ? (Number(l.quantite) || 0) : 1;
+    return '<button type="button" class="resultat' + (deja ? ' dedans' : '')
+      + '" data-ajouter="' + echapper(l.id) + '">'
+      + '<span class="corps">'
+      + '<span class="nom">' + echapper(designation(l.famille, l))
+      + (deja ? ' ✓ retirée' : '') + '</span>'
+      + '<span class="meta">' + echapper(l.famille) + ' · <code>'
+      + echapper(String(l.id).trim()) + '</code>'
+      + (serie ? ' · ' + quantite + ' exemplaires' : '') + '</span></span>'
+      + '<span class="prix">' + euros((Number(l.prix) || 0) * quantite) + '</span>'
+      + '</button>';
   }
 
   /* ARTICLE n'est pas PIÈCE : un modèle en série à 3 exemplaires est UN article remis et

@@ -11,7 +11,8 @@
    remplacés, et les téléphones qui ont déjà installé la page gardent l'ancienne
    version indéfiniment. C'est la seule ligne à ne jamais oublier de toucher.
    ───────────────────────────────────────────────────────────────────────────── */
-const VERSION = 'v12';  // v12 : retrait de pieces d un envoi par scan QR (28/10/2026)
+const VERSION = 'v13';  // v13 : liens envoi et pointage sur le portail (28/10/2026)
+// v12 : retrait de pieces d un envoi par scan QR (28/10/2026)
 // v10 : moyen de paiement Qonto (10/10/2026)
 // v9 : saisie a la main en plus du scan (10/10/2026)
 /* v8 : un carton deja ecrit rouvre son bilan, pas sa coche (09/10/2026). */

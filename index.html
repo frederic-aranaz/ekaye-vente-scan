@@ -81,6 +81,20 @@
       border: 1px solid rgba(226,169,90,0.3);
     }
     .topbar-classeur:active { background: rgba(226,169,90,0.28); }
+    /* Les deux autres pages du dépôt. Mêmes pastilles que « Classeur », mais en
+       ligne SOUS le bandeau et non dedans : à trois liens, le titre se fait
+       écraser sur un téléphone. Elles sont le premier enfant du corps, donc
+       affichées avant même que le stock soit chargé — si le réseau manque, on
+       doit pouvoir passer à l'envoi ou au pointage quand même. */
+    .pages { display: flex; gap: 8px; }
+    .pages a {
+      flex: 1; text-align: center;
+      padding: 10px; border-radius: 8px;
+      font-size: 13px; font-weight: 600; text-decoration: none;
+      color: #e8d8b0; background: rgba(226,169,90,0.15);
+      border: 1px solid rgba(226,169,90,0.3);
+    }
+    .pages a:active { background: rgba(226,169,90,0.28); }
 
     /* ── Layout ── */
     .body { padding: 1.25rem 1rem 2.5rem; display: flex; flex-direction: column; gap: 1.25rem; }
@@ -406,13 +420,18 @@
     <div>
       <h1>Registre de vente EKAYE</h1>
       <div class="topbar-sub">Scan QR + saisie manuelle — Libourne</div>
-      <div class="topbar-sub" id="version">Page v11</div>
+      <div class="topbar-sub" id="version">Page v13</div>
     </div>
     <a class="topbar-classeur" href="https://docs.google.com/spreadsheets/d/133qMwB3oH7jza0HkwVxhwpSKtkdeGH2ZUF0WbnR3enk/edit"
        target="_blank" rel="noopener">Classeur</a>
   </div>
 
   <div class="body">
+
+    <nav class="pages">
+      <a href="envoi.html">📦 Envoi en dépôt</a>
+      <a href="pointage.html">📋 Pointage</a>
+    </nav>
 
     <div id="attenteBox" class="attente-card" style="display:none;margin-bottom:1.25rem"></div>
 
@@ -612,7 +631,7 @@
   // Version de CETTE page — la même que VERSION dans sw.js, à incrémenter
   // ensemble (le banc serveur le vérifie). Affichée sous le titre avec celle du
   // registre, pour voir si le téléphone a bien quitté l'ancienne page.
-  var VERSION_PAGE = 'v11';
+  var VERSION_PAGE = 'v13';
 
   var URL_API_DEFAUT = 'https://script.google.com/macros/s/AKfycbwl4wyUyxOyrWVtXVvjoS-7LMqAULNaNBCAUdBZxRYTlFF3OVkjE0mWifOiG6oqK_h5Xg/exec';
 
