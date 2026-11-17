@@ -631,7 +631,7 @@
   // Version de CETTE page — la même que VERSION dans sw.js, à incrémenter
   // ensemble (le banc serveur le vérifie). Affichée sous le titre avec celle du
   // registre, pour voir si le téléphone a bien quitté l'ancienne page.
-  var VERSION_PAGE = 'v13';
+  var VERSION_PAGE = 'v14';
 
   var URL_API_DEFAUT = 'https://script.google.com/macros/s/AKfycbwl4wyUyxOyrWVtXVvjoS-7LMqAULNaNBCAUdBZxRYTlFF3OVkjE0mWifOiG6oqK_h5Xg/exec';
 
@@ -941,6 +941,7 @@
         return '<option value="' + a.id + '" data-famille="' + famille.replace(/"/g, '&quot;') +
           '" data-designation="' + designation.replace(/"/g, '&quot;') +
           '" data-type="' + String(a.type || '') +
+          '" data-offrable="' + (a.offrable ? '1' : '') +
           '" data-prix="' + prix + '">' +
           libelle + ' — ' + prix.toFixed(2).replace('.', ',') + ' €' + indicSerie + '</option>';
       }).join('') +
@@ -980,15 +981,20 @@
     }
   }
 
-  // La case « Offert » n'a de sens que sur un service : une pièce unique part avec
-  // l'acheteur, elle ne crée pas de créance à honorer plus tard.
+  // La case « Offert » n'a de sens que sur un article OFFRABLE — un atelier, qu'on paie
+  // aujourd'hui pour le faire plus tard. Une pièce unique part avec l'acheteur ; une
+  // réparation se fait sur l'objet qu'on a en main : ni l'une ni l'autre n'ouvre de
+  // créance à honorer. C'est le SERVEUR qui dit lesquels le sont (`offrable`, posé par
+  // familleEstOffrable_), jamais le type de l'article : jusqu'au 17/11/2026 la case
+  // s'affichait sur tout service, ce qui ne tenait que faute d'une deuxième famille de
+  // services — et cocher la case sur une réparation aurait ouvert un chèque cadeau.
   function basculerCaseOfferte(id) {
     var select = document.getElementById('stock-' + id);
     var opt = select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
-    var estServiceChoisi = !!(opt && opt.getAttribute('data-type') === 'Service');
+    var estOffrable = !!(opt && opt.getAttribute('data-offrable') === '1');
     var ligne = document.getElementById('rowOffert-' + id);
-    ligne.style.display = estServiceChoisi ? 'flex' : 'none';
-    if (!estServiceChoisi) document.getElementById('offert-' + id).checked = false;
+    ligne.style.display = estOffrable ? 'flex' : 'none';
+    if (!estOffrable) document.getElementById('offert-' + id).checked = false;
   }
 
   function filtrerArticlesParFamille(id) {
