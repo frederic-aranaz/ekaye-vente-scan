@@ -631,7 +631,7 @@
   // Version de CETTE page — la même que VERSION dans sw.js, à incrémenter
   // ensemble (le banc serveur le vérifie). Affichée sous le titre avec celle du
   // registre, pour voir si le téléphone a bien quitté l'ancienne page.
-  var VERSION_PAGE = 'v14';
+  var VERSION_PAGE = 'v15';
 
   var URL_API_DEFAUT = 'https://script.google.com/macros/s/AKfycbwl4wyUyxOyrWVtXVvjoS-7LMqAULNaNBCAUdBZxRYTlFF3OVkjE0mWifOiG6oqK_h5Xg/exec';
 
@@ -707,6 +707,12 @@
       if (!article.stockId) return;
       var idx = listes.stock.findIndex(function(a) { return String(a.id) === String(article.stockId); });
       if (idx === -1) return;
+      // Une PRESTATION ne s'épuise pas : « Réparation luminaire » reste au menu après
+      // qu'on en a vendu une. La retirer comme une pièce unique empêchait, hors ligne,
+      // d'enregistrer une deuxième réparation (ou un deuxième atelier) de toute la
+      // journée — la ligne repartait en « Autre », hors de sa famille, et rien ne le
+      // disait. Vu le 18/11/2026 en montant banc-page-vente.js.
+      if (estService(listes.stock[idx])) return;
       if (listes.stock[idx].type === 'Série') {
         listes.stock[idx].quantite = Math.max(0, (Number(listes.stock[idx].quantite) || 0) - 1);
       } else {
@@ -1004,19 +1010,38 @@
     choisirArticleStock(id);
   }
 
+  // Une PIÈCE porte le nom de sa fiche : son champ Désignation reste masqué, parce que
+  // deux libellés pour un même objet se paieraient au premier rapprochement avec Vendus.
+  // Un SERVICE, non : « Réparation luminaire » dit la NATURE de la prestation, jamais le
+  // travail fait. Son champ reste donc ouvert, pré-rempli par le libellé du catalogue,
+  // pour être complété — « Réparation luminaire — paire de lampes de chevet, 2 douilles
+  // E27 ». C'est cette phrase qui part dans Saisie (le serveur écrit article.designation
+  // tel quel), et un service ne passe NI par Vendus NI par une sortie de stock : rien
+  // d'autre ne relit ce texte. Le 17/11/2026, la première vraie réparation est passée par
+  // « Autre (hors stock) » faute de pouvoir décrire le travail — l'article était au
+  // catalogue, mais le choisir effaçait la description.
   function choisirArticleStock(id) {
     var select = document.getElementById('stock-' + id);
     var champDesig = document.getElementById('designation-' + id);
     var champMontant = document.getElementById('montant-' + id);
+    var ligneDesig = document.getElementById('rowDesig-' + id);
     if (select.value === '__hors_stock__' || select.value === '') {
-      champDesig.parentElement.parentElement.style.display = 'flex';
+      ligneDesig.style.display = 'flex';
       champDesig.value = '';
       if (select.value === '') champMontant.value = '';
     } else {
       var opt = select.options[select.selectedIndex];
-      champDesig.parentElement.parentElement.style.display = 'none';
+      // Le même juge que partout ailleurs sur la page, jamais un second « === 'Service' »
+      // écrit à côté : un ensemble fermé se juge par une fonction nommée (G101).
+      var estUnService = estService({ type: opt.getAttribute('data-type') });
+      ligneDesig.style.display = estUnService ? 'flex' : 'none';
       champDesig.value = opt.getAttribute('data-designation');
-      champMontant.value = opt.getAttribute('data-prix');
+      // Une prestation à 0 € au catalogue n'a pas de prix : elle se chiffre au cas par
+      // cas (décision du 17/11/2026). Pré-remplir « 0 » obligerait à l'effacer avant de
+      // taper, et un 0 oublié fait refuser le panier entier sans dire lequel des deux
+      // champs manque.
+      var prix = opt.getAttribute('data-prix');
+      champMontant.value = (estUnService && Number(prix) === 0) ? '' : prix;
     }
     basculerCaseOfferte(id);
     basculerChampsCheque(id);

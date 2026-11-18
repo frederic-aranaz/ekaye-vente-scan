@@ -11,7 +11,7 @@
    remplacés, et les téléphones qui ont déjà installé la page gardent l'ancienne
    version indéfiniment. C'est la seule ligne à ne jamais oublier de toucher.
    ───────────────────────────────────────────────────────────────────────────── */
-const VERSION = 'v14';  // v14 : la case « chèque cadeau » suit le drapeau offrable (17/11/2026)
+const VERSION = 'v15';  // v15 : la désignation reste modifiable sur un service (18/11/2026)
 // v12 : retrait de pieces d un envoi par scan QR (28/10/2026)
 // v10 : moyen de paiement Qonto (10/10/2026)
 // v9 : saisie a la main en plus du scan (10/10/2026)
